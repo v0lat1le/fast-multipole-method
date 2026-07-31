@@ -1,0 +1,6 @@
+[submodule "glfw"]
+	path = glfw
+	url = https://github.com/glfw/glfw
+[submodule "grtest"]
+	path = grtest
+	url = https://github.com/v0lat1le/grtest

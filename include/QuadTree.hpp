@@ -1,0 +1,139 @@
+#pragma once
+
+#include <array>
+#include <cassert>
+#include <generator>
+#include <unordered_map>
+
+#include "Vec2.hpp"
+
+
+constexpr uint64_t spread_bits(uint32_t x) noexcept {
+    uint64_t val = x;
+    val = (val | (val << 16)) & 0x0000FFFF0000FFFF;
+    val = (val | (val << 8))  & 0x00FF00FF00FF00FF;
+    val = (val | (val << 4))  & 0x0F0F0F0F0F0F0F0F;
+    val = (val | (val << 2))  & 0x3333333333333333;
+    val = (val | (val << 1))  & 0x5555555555555555;
+    return val;
+}
+
+constexpr uint64_t interleave_bits(uint32_t x, uint32_t y) noexcept {
+    return spread_bits(x) | (spread_bits(y) << 1);
+}
+
+struct InterleaveHash {
+    static constexpr uint64_t operator()(const Vec2i& v) noexcept {
+        return interleave_bits(v.x, v.y);
+    }
+
+    static constexpr uint64_t operator()(const Vec2d& v) noexcept {
+        return interleave_bits(static_cast<uint32_t>(ldexp(v.x, 32)), static_cast<uint32_t>(ldexp(v.y, 32)));
+    }
+};
+
+template<typename T>
+struct QuadTree {
+    using Level = std::unordered_map<Vec2i, T, InterleaveHash>;
+    std::vector<Level> levels;
+    static constexpr Vec2i parent_coords(std::size_t level, Vec2i coords) noexcept {
+        assert(level > 0);
+        assert(level < 33);
+        if (level == 1) {
+            return Vec2i{};
+        }
+        auto parent_mask = 0xFFFFFFFFu << (33-level);
+        return Vec2i{ coords.x & parent_mask, coords.y & parent_mask };
+    }
+
+    static constexpr std::array<Vec2i, 4> children_coords(std::size_t level, Vec2i coords) noexcept {
+        assert(level < 32);
+        auto child_mask = 1u << (31-level);
+        return {
+            coords,
+            Vec2i{coords.x | child_mask, coords.y},
+            Vec2i{coords.x, coords.y | child_mask},
+            Vec2i{coords.x | child_mask, coords.y | child_mask},
+        };
+    }
+
+    static constexpr std::array<Vec2i, 3> siblings_coords(std::size_t level, Vec2i coords) noexcept {
+        assert(level > 0);
+        assert(level < 32);
+        auto sibling_mask = 1u << (32-level);
+        return {
+            Vec2i{coords.x ^ sibling_mask, coords.y},
+            Vec2i{coords.x, coords.y ^ sibling_mask},
+            Vec2i{coords.x ^ sibling_mask, coords.y ^ sibling_mask},
+        };
+    }
+
+    static std::generator<Vec2i> neighbours_coords(std::size_t level, Vec2i coords) {
+        if (level == 0) {
+            co_return;
+        }
+        auto sibling_mask = 1u << (32-level);
+        auto overflow = std::numeric_limits<uint32_t>::max() - sibling_mask;
+        if (coords.x >= sibling_mask and coords.y >= sibling_mask)
+            co_yield Vec2i{ coords.x - sibling_mask, coords.y - sibling_mask };
+        if (coords.y >= sibling_mask)
+            co_yield Vec2i{ coords.x, coords.y - sibling_mask };
+        if (coords.x <= overflow and coords.y >= sibling_mask)
+            co_yield Vec2i{ coords.x + sibling_mask, coords.y - sibling_mask };
+        if (coords.x >= sibling_mask)
+            co_yield Vec2i{ coords.x - sibling_mask, coords.y };
+        if (coords.x <= overflow)
+            co_yield Vec2i{ coords.x + sibling_mask, coords.y };
+        if (coords.x >= sibling_mask and coords.y <= overflow)
+            co_yield Vec2i{ coords.x - sibling_mask, coords.y + sibling_mask };
+        if (coords.y <= overflow)
+            co_yield Vec2i{ coords.x, coords.y + sibling_mask };
+        if (coords.x <= overflow and coords.y <= overflow)
+            co_yield Vec2i{ coords.x + sibling_mask, coords.y + sibling_mask };
+    }
+
+    static constexpr bool is_parent(Vec2i coords, std::size_t parent_level, Vec2i parent) {
+        if (parent_level == 0) {
+            return true;
+        }
+        auto parent_mask = 0xFFFFFFFFu << (32-parent_level);
+        return (coords.x & parent_mask) == parent.x and (coords.y & parent_mask) == parent.y;
+    }
+
+    // is b within a-size of a?
+    static constexpr bool is_adjacent(std::size_t a_level, Vec2i a, std::size_t b_level, Vec2i b) {
+        assert(a_level < 32);
+        assert(b_level <= a_level);
+        int64_t a_size = 1u << (32-a_level); // cast to int64 so we can't under/over flow
+        int64_t b_size = 1u << (32-b_level);
+
+        return b.x <= a.x + a_size and b.y <= a.y + a_size and b.x >= a.x - b_size and b.y >= a.y - b_size;
+    }
+
+    bool has_children(std::size_t level, Vec2i coords) const {
+        if (level == levels.size()-1) {
+            return false;
+        }
+        for (auto& child_cell_coord: children_coords(level, coords)) {
+            if (levels[level+1].contains(child_cell_coord)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    auto find_childless_parent(std::size_t level, Vec2i coords) const {
+        for (auto parent_level = level-1; parent_level > 0; --parent_level) {
+            coords = parent_coords(parent_level+1, coords);
+            auto parent = levels[parent_level].find(coords);
+            if (parent == levels[parent_level].end()) {
+                continue;
+            }
+            if (has_children(parent_level, coords)) {
+                break;
+            }
+            return std::make_pair(parent_level, parent);
+        }
+        return std::make_pair(std::size_t{ 0 }, levels[0].end());
+    }
+};
