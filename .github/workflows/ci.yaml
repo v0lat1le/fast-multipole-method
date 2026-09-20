@@ -1,0 +1,33 @@
+name: CI
+on: [push, workflow_dispatch]
+
+jobs:
+  job:
+    name: ${{ github.workflow }}-${{ matrix.os }}-${{ matrix.compiler }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            compiler: msvc-17
+            workflow: debug_msvc
+          - os: ubuntu-24.04
+            compiler: gcc-13
+            workflow: debug_gcc
+          - os: macos-15
+            compiler: clang-17
+            workflow: debug_clang
+
+    steps:
+      - name: Install OpenGL
+        if: matrix.os == 'ubuntu-24.04'
+        uses: rishabhc32/apt-package-cache@v1.0.1
+        with:
+          packages: libgl1-mesa-dev libxrandr-dev libxinerama-dev
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Run CMake
+        run: cmake --workflow --preset ${{ matrix.workflow }} --fresh
