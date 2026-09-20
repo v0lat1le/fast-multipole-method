@@ -56,6 +56,7 @@ constexpr bool cmp_zcurve_bitmagic(const Vec2<T>& lhs, const Vec2<T>& rhs) noexc
 
 struct Cell {
     std::span<const Vec2d> points;
+    std::uint8_t flags;
 };
 
 using Cells = QuadTree<Cell>;
