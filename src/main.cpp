@@ -3,6 +3,8 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
+#include <cmath>
 #include <random>
 #include <ranges>
 
@@ -37,9 +39,9 @@ std::vector<float> quad_tree_lines(const Cells& cells) {
     std::vector<float> lineVertices;
     for (std::size_t level=0; level<cells.levels.size(); ++level) {
         for (auto& cell: cells.levels[level]) {
-            float x = ldexp(cell.first.x, -32);
-            float y = ldexp(cell.first.y, -32);
-            float cell_size = ldexp(1.0, -level);
+            float x = std::ldexp(cell.first.x, -32);
+            float y = std::ldexp(cell.first.y, -32);
+            float cell_size = std::ldexp(1.0, -level);
             lineVertices.insert(lineVertices.end(), {
                 x, y, x + cell_size, y,
                 x + cell_size, y, x + cell_size, y + cell_size,

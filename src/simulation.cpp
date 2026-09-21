@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <complex>
+#include <cmath>
 
 #include "Vec2.hpp"
 #include "QuadTree.hpp"
@@ -28,7 +29,7 @@ Cells build_quadtree(std::span<const Vec2d> points, int max_levels, int max_poin
             std::uint8_t child_flag = 1;
             auto prev_child_cell_coords = cell.first;
             for (const auto& child_cell_coords: child_cells_coords) {
-                auto double_space_coords = Vec2d{ ldexp(child_cell_coords.x, -32), ldexp(child_cell_coords.y, -32) };
+                auto double_space_coords = Vec2d{ std::ldexp(child_cell_coords.x, -32), std::ldexp(child_cell_coords.y, -32) };
                 auto end = std::upper_bound(begin, cell.second.points.end(), double_space_coords, static_cast<bool(*)(const Vec2d&, const Vec2d&)>(cmp_zcurve_bitmagic));
                 if (begin != end) {
                     cells.levels[level+1].emplace(std::make_pair(prev_child_cell_coords, Cell{ {begin, end} }));
@@ -73,7 +74,7 @@ template <std::size_t P>
 struct Multipole {
     double q;
     std::array<std::complex<double>, P> a;
-    uint8_t flags;
+    std::uint8_t flags;
 };
 
 template <std::size_t P>
@@ -83,7 +84,7 @@ QuadTree<Multipole<P>> compute_multipoles(const Cells& cells, std::span<const do
     for (std::size_t level=cells.levels.size(); level-- > 0;) {
         for (auto& cell: cells.levels[level]) {
             auto child_mask = 1u << (31-level);
-            auto cell_center = Vec2d(ldexp(cell.first.x | child_mask, -32), ldexp(cell.first.y | child_mask, -32));
+            auto cell_center = Vec2d(std::ldexp(cell.first.x | child_mask, -32), std::ldexp(cell.first.y | child_mask, -32));
             auto multipole = multipoles.levels[level].emplace(std::make_pair(cell.first, Multipole<P>{}));
             multipole.first->second.flags = cell.second.flags;
             multipole.first->second.q = cell.second.points.size(); // TODO: correct mass!
@@ -157,7 +158,7 @@ void compute_acceleration_multipoles(const Cells& cells, std::span<const Vec2d> 
                 if (not multipoles.is_adjacent(level, multipole.first, parent_level, parent_neighbour->first)) {
                     std::ptrdiff_t dst_offset = parent_neighbour->second.points.data() - positions.data();
                     auto child_mask = 1u << (31-level);
-                    auto cell_center = Vec2d(ldexp(multipole.first.x | child_mask, -32), ldexp(multipole.first.y | child_mask, -32));
+                    auto cell_center = Vec2d(std::ldexp(multipole.first.x | child_mask, -32), std::ldexp(multipole.first.y | child_mask, -32));
                     compute_acceleration_multipole(cell_center, multipole.second,
                         parent_neighbour->second.points, accelerations.subspan(dst_offset, parent_neighbour->second.points.size()));
                     continue;
@@ -173,7 +174,7 @@ void compute_acceleration_multipoles(const Cells& cells, std::span<const Vec2d> 
                         std::ptrdiff_t dst_offset = cousin->second.points.data() - positions.data();
                         if (not cells.is_adjacent(level, multipole.first, level, cousin_coords)) {
                             auto child_mask = 1u << (31-level);
-                            auto cell_center = Vec2d(ldexp(multipole.first.x | child_mask, -32), ldexp(multipole.first.y | child_mask, -32));
+                            auto cell_center = Vec2d(std::ldexp(multipole.first.x | child_mask, -32), std::ldexp(multipole.first.y | child_mask, -32));
                             compute_acceleration_multipole(cell_center, multipole.second,
                                 cousin->second.points, accelerations.subspan(dst_offset, cousin->second.points.size()));
                         } else if (not has_children) {

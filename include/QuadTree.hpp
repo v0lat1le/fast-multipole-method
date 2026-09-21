@@ -2,13 +2,16 @@
 
 #include <array>
 #include <cassert>
+#include <cmath>
+#include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 #include "Vec2.hpp"
 
 
-constexpr uint64_t spread_bits(uint32_t x) noexcept {
-    uint64_t val = x;
+constexpr std::uint64_t spread_bits(std::uint32_t x) noexcept {
+    std::uint64_t val = x;
     val = (val | (val << 16)) & 0x0000FFFF0000FFFF;
     val = (val | (val << 8))  & 0x00FF00FF00FF00FF;
     val = (val | (val << 4))  & 0x0F0F0F0F0F0F0F0F;
@@ -17,17 +20,17 @@ constexpr uint64_t spread_bits(uint32_t x) noexcept {
     return val;
 }
 
-constexpr uint64_t interleave_bits(uint32_t x, uint32_t y) noexcept {
+constexpr std::uint64_t interleave_bits(std::uint32_t x, std::uint32_t y) noexcept {
     return spread_bits(x) | (spread_bits(y) << 1);
 }
 
 struct InterleaveHash {
-    static constexpr uint64_t operator()(const Vec2i& v) noexcept {
+    static constexpr std::uint64_t operator()(const Vec2i& v) noexcept {
         return interleave_bits(v.x, v.y);
     }
 
-    static constexpr uint64_t operator()(const Vec2d& v) noexcept {
-        return interleave_bits(static_cast<uint32_t>(ldexp(v.x, 32)), static_cast<uint32_t>(ldexp(v.y, 32)));
+    static constexpr std::uint64_t operator()(const Vec2d& v) noexcept {
+        return interleave_bits(static_cast<std::uint32_t>(std::ldexp(v.x, 32)), static_cast<std::uint32_t>(std::ldexp(v.y, 32)));
     }
 };
 
@@ -115,14 +118,13 @@ struct QuadTree {
         return (coords.x & parent_mask) == parent.x and (coords.y & parent_mask) == parent.y;
     }
 
-    // is b within a-size of a?
     static constexpr bool is_adjacent(std::size_t a_level, Vec2i a, std::size_t b_level, Vec2i b) {
         assert(a_level < 32);
         assert(b_level <= a_level);
-        int64_t a_size = 1u << (32-a_level); // cast to int64 so we can't under/over flow
-        int64_t b_size = 1u << (32-b_level);
+        std::int64_t a_size = 1u << (32-a_level); // cast to int64 so we can't overflow
+        std::int64_t b_size = 1u << (32-b_level);
 
-        return b.x <= a.x + a_size and b.y <= a.y + a_size and b.x >= a.x - b_size and b.y >= a.y - b_size;
+        return b.x <= a.x + a_size and b.y <= a.y + a_size and a.x <= b.x + b_size and a.y <= b.y + b_size;
     }
 
     bool has_children(std::size_t level, Vec2i coords) const {

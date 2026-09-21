@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 
 template<typename T>
 struct Vec2 {
@@ -43,5 +45,5 @@ struct Vec2 {
         return lhs;
     }
 };
-using Vec2i = Vec2<uint32_t>;
+using Vec2i = Vec2<std::uint32_t>;
 using Vec2d = Vec2<double>;
