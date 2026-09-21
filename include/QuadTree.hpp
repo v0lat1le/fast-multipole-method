@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cassert>
-#include <generator>
 #include <unordered_map>
 
 #include "Vec2.hpp"
@@ -68,28 +67,44 @@ struct QuadTree {
         };
     }
 
-    static std::generator<Vec2i> neighbours_coords(std::size_t level, Vec2i coords) {
+    struct NeighbourCoords {
+        std::array<Vec2i, 8> data{};
+        std::uint8_t count = 0;
+
+        constexpr const Vec2i* begin() const noexcept { return data.data(); }
+        constexpr const Vec2i* end() const noexcept { return data.data() + count; }
+        constexpr std::size_t size() const noexcept { return count; }
+        constexpr bool empty() const noexcept { return count == 0; }
+    };
+
+    static constexpr NeighbourCoords neighbours_coords(std::size_t level, Vec2i coords) {
+        NeighbourCoords result;
         if (level == 0) {
-            co_return;
+            return result;
         }
-        auto sibling_mask = 1u << (32-level);
-        auto overflow = std::numeric_limits<uint32_t>::max() - sibling_mask;
-        if (coords.x >= sibling_mask and coords.y >= sibling_mask)
-            co_yield Vec2i{ coords.x - sibling_mask, coords.y - sibling_mask };
-        if (coords.y >= sibling_mask)
-            co_yield Vec2i{ coords.x, coords.y - sibling_mask };
-        if (coords.x <= overflow and coords.y >= sibling_mask)
-            co_yield Vec2i{ coords.x + sibling_mask, coords.y - sibling_mask };
-        if (coords.x >= sibling_mask)
-            co_yield Vec2i{ coords.x - sibling_mask, coords.y };
-        if (coords.x <= overflow)
-            co_yield Vec2i{ coords.x + sibling_mask, coords.y };
-        if (coords.x >= sibling_mask and coords.y <= overflow)
-            co_yield Vec2i{ coords.x - sibling_mask, coords.y + sibling_mask };
-        if (coords.y <= overflow)
-            co_yield Vec2i{ coords.x, coords.y + sibling_mask };
-        if (coords.x <= overflow and coords.y <= overflow)
-            co_yield Vec2i{ coords.x + sibling_mask, coords.y + sibling_mask };
+
+        const auto sibling_mask = 1u << (32 - level);
+        const auto overflow = std::numeric_limits<uint32_t>::max() - sibling_mask;
+
+        const bool sub_x = coords.x >= sibling_mask;
+        const bool sub_y = coords.y >= sibling_mask;
+        const bool add_x = coords.x <= overflow;
+        const bool add_y = coords.y <= overflow;
+
+        auto push = [&](std::uint32_t x, std::uint32_t y) {
+            result.data[result.count++] = Vec2i{ x, y };
+        };
+
+        if (sub_x && sub_y) push(coords.x - sibling_mask, coords.y - sibling_mask);
+        if (sub_y)          push(coords.x, coords.y - sibling_mask);
+        if (add_x && sub_y) push(coords.x + sibling_mask, coords.y - sibling_mask);
+        if (sub_x)          push(coords.x - sibling_mask, coords.y);
+        if (add_x)          push(coords.x + sibling_mask, coords.y);
+        if (sub_x && add_y) push(coords.x - sibling_mask, coords.y + sibling_mask);
+        if (add_y)          push(coords.x, coords.y + sibling_mask);
+        if (add_x && add_y) push(coords.x + sibling_mask, coords.y + sibling_mask);
+
+        return result;
     }
 
     static constexpr bool is_parent(Vec2i coords, std::size_t parent_level, Vec2i parent) {
