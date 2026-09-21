@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <complex>
 #include <random>
+#include <ranges>
 
 #include "grtest.h"
 #include "simulation.hpp"
@@ -41,11 +42,14 @@ bool equal_approx(Vec2d a, Vec2d b, double eps=1e-10) {
     return equal_approx(a.x, b.x, eps) && equal_approx(a.y, b.y, eps);
 }
 
-void run_test(std::vector<Vec2d> positions) {
-    auto masses = std::vector<double>(positions.size(), 1.0);
+void run_test(std::vector<Vec2d> positions, std::vector<double> masses) {
     std::vector<Vec2d> accelerations_exepected(positions.size());
     std::vector<Vec2d> accelerations(positions.size());
 
+    auto zipped = std::ranges::views::zip(positions, masses);
+    std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
+        return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
+    });
     std::sort(positions.begin(), positions.end(), static_cast<bool(*)(const Vec2d&, const Vec2d&)>(cmp_zcurve_bitmagic));
     compute_acceleration_direct(positions, masses, accelerations_exepected);
 
@@ -54,6 +58,10 @@ void run_test(std::vector<Vec2d> positions) {
     for (int i=0; i<accelerations.size(); ++i) {
         assert(equal_approx(accelerations[i], accelerations_exepected[i], 0.01));
     }
+}
+
+void run_test(std::vector<Vec2d> positions) {
+    run_test(positions, std::vector<double>(positions.size(), 1.0));
 }
 
 //TEST_CASE(test_compute_acceleration_trivial) {
@@ -146,13 +154,16 @@ TEST_CASE(test_random) {
     std::uniform_real_distribution<double> distrib(0, 1);
 
     std::vector<Vec2d> positions;
+    std::vector<double> masses;
     for (int q=3; q<10; ++q) {
         positions.resize(q);
+        masses.resize(q);
         for (int k=0; k<1000; ++k) {
             for (std::size_t i=0; i<positions.size(); ++i) {
                 positions[i] = { distrib(gen), distrib(gen) };
+                masses[i] = distrib(gen);
             }
-            run_test(positions);
+            run_test(positions, masses);
         }
     }
 }

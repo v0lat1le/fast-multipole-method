@@ -26,11 +26,11 @@ constexpr int msb_diff(T a, T b) noexcept {
         auto b_exponent = b_bits >> mantissa_size;
 
         if (a_exponent == b_exponent) {
-            return a_exponent + msb_diff(a_bits & mantissa_mask, b_bits & mantissa_mask) - mantissa_size;
+            return static_cast<int>(a_exponent + msb_diff(a_bits & mantissa_mask, b_bits & mantissa_mask) - mantissa_size);
         } else if (b_exponent < a_exponent) {
-            return a_exponent;
+            return static_cast<int>(a_exponent);
         } else {
-            return b_exponent;
+            return static_cast<int>(b_exponent);
         }
     }
 }

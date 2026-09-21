@@ -121,8 +121,8 @@ struct QuadTree {
     static constexpr bool is_adjacent(std::size_t a_level, Vec2i a, std::size_t b_level, Vec2i b) {
         assert(a_level < 32);
         assert(b_level <= a_level);
-        std::int64_t a_size = 1u << (32-a_level); // cast to int64 so we can't overflow
-        std::int64_t b_size = 1u << (32-b_level);
+        auto a_size = std::uint64_t(1) << (32-a_level);  // uint64_t so we don't overflow
+        auto b_size = std::uint64_t(1) << (32-b_level);
 
         return b.x <= a.x + a_size and b.y <= a.y + a_size and a.x <= b.x + b_size and a.y <= b.y + b_size;
     }
@@ -146,8 +146,14 @@ struct QuadTree {
             if (parent == levels[parent_level].end()) {
                 continue;
             }
-            if (has_children(parent_level, coords)) {
-                break;
+            if constexpr (requires { parent->second.flags; }) {
+                if ((parent->second.flags & 15) != 0) {
+                    break;
+                }
+            } else {
+                if (has_children(parent_level, coords)) {
+                    break;
+                }
             }
             return std::make_pair(parent_level, parent);
         }

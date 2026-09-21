@@ -41,7 +41,7 @@ std::vector<float> quad_tree_lines(const Cells& cells) {
         for (auto& cell: cells.levels[level]) {
             float x = std::ldexp(cell.first.x, -32);
             float y = std::ldexp(cell.first.y, -32);
-            float cell_size = std::ldexp(1.0, -level);
+            float cell_size = std::ldexp(1.0, -static_cast<int>(level));
             lineVertices.insert(lineVertices.end(), {
                 x, y, x + cell_size, y,
                 x + cell_size, y, x + cell_size, y + cell_size,

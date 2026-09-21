@@ -78,7 +78,7 @@ struct Multipole {
 };
 
 template <std::size_t P>
-QuadTree<Multipole<P>> compute_multipoles(const Cells& cells, std::span<const double> masses) {
+QuadTree<Multipole<P>> compute_multipoles(const Cells& cells, std::span<const Vec2d> positions, std::span<const double> masses) {
     auto multipoles = QuadTree<Multipole<P>>();
     multipoles.levels.resize(cells.levels.size());
     for (std::size_t level=cells.levels.size(); level-- > 0;) {
@@ -87,14 +87,16 @@ QuadTree<Multipole<P>> compute_multipoles(const Cells& cells, std::span<const do
             auto cell_center = Vec2d(std::ldexp(cell.first.x | child_mask, -32), std::ldexp(cell.first.y | child_mask, -32));
             auto multipole = multipoles.levels[level].emplace(std::make_pair(cell.first, Multipole<P>{}));
             multipole.first->second.flags = cell.second.flags;
-            multipole.first->second.q = cell.second.points.size(); // TODO: correct mass!
+            std::ptrdiff_t offset = cell.second.points.data() - positions.data();
             for (int i=0; i<cell.second.points.size(); ++i) {
+                auto mass = masses[offset+i];
+                multipole.first->second.q += mass;
                 auto relative_coords = cell.second.points[i]-cell_center;
                 auto z = std::complex(relative_coords.x, relative_coords.y);
-                auto z_power = std::complex(1.0);
+                auto z_power = std::complex(mass);
                 for (int k=0; k<multipole.first->second.a.size(); ++k) {
                     z_power *= z;
-                    multipole.first->second.a[k] -= z_power*(1.0/(k+1.0)); // TODO: correct mass
+                    multipole.first->second.a[k] -= z_power/(k+1.0);
                 }
             }
         }
@@ -118,7 +120,7 @@ void compute_acceleration_multipole(Vec2d src_pos, const Multipole<P>& multipole
 }
 
 void compute_acceleration_multipoles(const Cells& cells, std::span<const Vec2d> positions, std::span<const double> masses, std::span<Vec2d> accelerations) {
-    auto multipoles = compute_multipoles<8>(cells, masses);
+    auto multipoles = compute_multipoles<8>(cells, positions, masses);
 
     for (std::size_t level=1; level<multipoles.levels.size(); ++level) {  // skipping level 0 to avoid buncha level==0 checks
         for (auto& multipole: multipoles.levels[level]) {
