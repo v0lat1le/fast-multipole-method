@@ -15,7 +15,7 @@
 
 
 void populate_system(std::span<Vec2d> positions, std::span<Vec2d> velocities, double r=0.5) {
-    double density = std::sqrt(positions.size())*0.2;
+    double density = std::sqrt(positions.size())*0.3;
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> distrib(-r, r);
@@ -53,28 +53,53 @@ std::vector<float> quad_tree_lines(const Cells& cells) {
     return lineVertices;
 }
 
+std::vector<float> quad_tree_lines(const QuadTree2<std::span<const Vec2d>>& cells) {
+    std::vector<float> lineVertices;
+    for (auto& cell: cells.cells) {
+        float x = std::ldexp(cell.coords.x, -32);
+        float y = std::ldexp(cell.coords.y, -32);
+        float cell_size = std::ldexp(1.0, -static_cast<int>(cell.level));
+        lineVertices.insert(lineVertices.end(), {
+            x, y, x + cell_size, y,
+            x + cell_size, y, x + cell_size, y + cell_size,
+            x + cell_size, y + cell_size, x, y + cell_size,
+            x, y + cell_size, x, y
+            });
+    }
+    return lineVertices;
+}
+
 struct Simulation {
     std::vector<Vec2d> positions;
     std::vector<Vec2d> velocities;
     std::vector<double> masses;
     std::vector<Vec2d> accelerations;
-    Cells quad_tree;
+    //Cells quad_tree;
+    QuadTree2<std::span<const Vec2d>>quadtree2;
+
+    Simulation() : quadtree2({}) {}
 
     void init() {
         auto zipped = std::ranges::views::zip(positions, velocities, masses);
         std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
             return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
         });
-        quad_tree = build_quadtree(positions, 24, 8);
+        //quad_tree = build_quadtree(positions, 16, 1);
+        quadtree2 = build_quadtree2(positions, 32, 8);
     }
 
     void update(double dt) {
-        compute_acceleration_multipoles(quad_tree, positions, masses, accelerations);
+        //compute_acceleration_multipoles(quad_tree, positions, masses, accelerations);
+        compute_acceleration_multipoles2(quadtree2, positions, masses, accelerations);
         //compute_acceleration_direct(positions, masses, accelerations);
         for (int i=0; i<velocities.size(); i++) {
             velocities[i] += accelerations[i]*dt;
             accelerations[i] = {};
             positions[i] += velocities[i]*dt;
+            if (positions[i].x <= 0.0 or positions[i].x >= 1.0 or positions[i].y <= 0.0 or positions[i].y >= 1.0) {
+                positions[i]={0.5, 0.5};
+                velocities[i]={ 0.0, 0.0 };
+            }
         }
 
         init();
@@ -100,7 +125,7 @@ int main(void) {
     Simulation simulation;
     simulation.resize(10000);
     std::fill(simulation.masses.begin(), simulation.masses.end(), 1.0);
-    populate_system(simulation.positions, simulation.velocities, 0.2);
+    populate_system(simulation.positions, simulation.velocities, 0.3);
     simulation.init();
 
     //std::random_device rd;
@@ -120,8 +145,10 @@ int main(void) {
     //        auto accelerations_exepected = simulation.accelerations;
     //        compute_acceleration_direct(simulation.positions, simulation.masses, accelerations_exepected);
 
-    //        simulation.quad_tree = build_quadtree(simulation.positions, 16, 1);
-    //        compute_acceleration_multipoles(simulation.quad_tree, simulation.positions, simulation.masses, simulation.accelerations);
+    //        //simulation.quad_tree = build_quadtree(simulation.positions, 16, 1);
+    //        simulation.quadtree2 = build_quadtree2(simulation.positions, 24, 8);
+    //        // compute_acceleration_multipoles(simulation.quad_tree, simulation.positions, simulation.masses, simulation.accelerations);
+    //        compute_acceleration_multipoles2(simulation.quadtree2, simulation.positions, simulation.masses, simulation.accelerations);
     //        for (int i=0; i<simulation.accelerations.size(); ++i) {
     //            if (not equal_approx(simulation.accelerations[i], accelerations_exepected[i], 0.1)) {
     //                found_bad = true;
@@ -132,7 +159,7 @@ int main(void) {
     //}
 
     bool update_simulation = true;
-    bool display_quad_tree = true;
+    bool display_quad_tree = false;
 
     if (!glfwInit()) {
         return -1;
@@ -207,7 +234,7 @@ int main(void) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (display_quad_tree) {
-            std::vector<float> lineVertices = quad_tree_lines(simulation.quad_tree);
+            std::vector<float> lineVertices = quad_tree_lines(simulation.quadtree2);
             glBindVertexArray(quadTreeArrayObject);
             glBindBuffer(GL_ARRAY_BUFFER, quadTreeBufferObject);
             glBufferData(GL_ARRAY_BUFFER, lineVertices.size() * sizeof(float), lineVertices.data(), GL_DYNAMIC_DRAW);

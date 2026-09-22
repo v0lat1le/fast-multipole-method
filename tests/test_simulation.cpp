@@ -34,6 +34,13 @@ TEST_CASE(test_build_quadtree) {
     assert(cells.levels[6].size() == 4);
 }
 
+TEST_CASE(test_build_quadtree2) {
+    auto points = std::vector<Vec2d>({ {0.11, 0.11}, {0.1, 0.1}, {0.1, 0.11}, {0.11, 0.1} });
+    std::sort(points.begin(), points.end(), static_cast<bool(*)(const Vec2d&, const Vec2d&)>(cmp_zcurve_bitmagic));
+    auto cells = build_quadtree2(points, 32, 1);
+    assert(cells.cells.size() == 10);
+}
+
 bool equal_approx(double a, double b, double eps=1e-10) {
     return std::abs(a - b) <= eps;
 }
@@ -62,6 +69,24 @@ void run_test(std::vector<Vec2d> positions, std::vector<double> masses) {
 
 void run_test(std::vector<Vec2d> positions) {
     run_test(positions, std::vector<double>(positions.size(), 1.0));
+}
+
+void run_test2(std::vector<Vec2d> positions, std::vector<double> masses) {
+    std::vector<Vec2d> accelerations_exepected(positions.size());
+    std::vector<Vec2d> accelerations(positions.size());
+
+    auto zipped = std::ranges::views::zip(positions, masses);
+    std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
+        return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
+    });
+    std::sort(positions.begin(), positions.end(), static_cast<bool(*)(const Vec2d&, const Vec2d&)>(cmp_zcurve_bitmagic));
+    compute_acceleration_direct(positions, masses, accelerations_exepected);
+
+    auto cells = build_quadtree2(positions, 16, 1);
+    compute_acceleration_multipoles2(cells, positions, masses, accelerations);
+    for (int i=0; i<accelerations.size(); ++i) {
+        assert(equal_approx(accelerations[i], accelerations_exepected[i], 0.01));
+    }
 }
 
 //TEST_CASE(test_compute_acceleration_trivial) {
@@ -164,6 +189,7 @@ TEST_CASE(test_random) {
                 masses[i] = distrib(gen);
             }
             run_test(positions, masses);
+            run_test2(positions, masses);
         }
     }
 }

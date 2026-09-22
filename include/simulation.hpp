@@ -62,8 +62,10 @@ struct Cell {
 using Cells = QuadTree<Cell>;
 
 Cells build_quadtree(std::span<const Vec2d> points, int max_levels, int max_points=1);
+QuadTree2<std::span<const Vec2d>> build_quadtree2(std::span<const Vec2d> points, int max_levels, int max_points=1);
 
 void compute_acceleration_direct(std::span<const Vec2d> positions, std::span<const double> masses, std::span<Vec2d> accelerations);
 void compute_acceleration_direct(std::span<const Vec2d> src_pos, std::span<const double> src_mass, std::span<const Vec2d> dst_pos, std::span<Vec2d> dst_acc);
 
 void compute_acceleration_multipoles(const Cells& cells, std::span<const Vec2d> positions, std::span<const double> masses, std::span<Vec2d> accelerations);
+void compute_acceleration_multipoles2(const QuadTree2<std::span<const Vec2d>>& cells, std::span<const Vec2d> positions, std::span<const double> masses, std::span<Vec2d> accelerations);

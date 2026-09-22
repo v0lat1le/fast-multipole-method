@@ -2,6 +2,8 @@
 
 ### To Do
 - [ ] O(n) impl
+- [ ] Vectorize
+- [ ] Multi-thread
 
 ### In Progress
-- [ ] speed up quadtree operations
+- [ ] Speed up quadtree operations
