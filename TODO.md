@@ -1,9 +1,9 @@
 # FMM TODO
 
 ### To Do
-- [ ] O(n) impl
+- [ ] QuadTree tests
 - [ ] Vectorize
 - [ ] Multi-thread
 
 ### In Progress
-- [ ] Speed up quadtree operations
+- [ ] O(n) impl

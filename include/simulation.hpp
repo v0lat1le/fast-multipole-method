@@ -35,16 +35,6 @@ constexpr int msb_diff(T a, T b) noexcept {
     }
 }
 
-//constexpr bool cmp_zcurve_bitmagic(const Vec2i& lhs, const Vec2i& rhs) noexcept {
-//   auto msb_x = lhs.x ^ rhs.x;
-//    auto msb_y = lhs.y ^ rhs.y;
-//    if (msb_y < msb_x and msb_y < (msb_x ^ msb_y)) {
-//        return lhs.x < rhs.x;
-//    } else {
-//        return lhs.y < rhs.y;
-//    }
-//}
-
 template<typename T>
 constexpr bool cmp_zcurve_bitmagic(const Vec2<T>& lhs, const Vec2<T>& rhs) noexcept {
     if (msb_diff(lhs.y, rhs.y) < msb_diff(lhs.x, rhs.x)) {
@@ -54,18 +44,9 @@ constexpr bool cmp_zcurve_bitmagic(const Vec2<T>& lhs, const Vec2<T>& rhs) noexc
     }
 }
 
-struct Cell {
-    std::span<const Vec2d> points;
-    std::uint8_t flags;
-};
-
-using Cells = QuadTree<Cell>;
-
-Cells build_quadtree(std::span<const Vec2d> points, int max_levels, int max_points=1);
-QuadTree2<std::span<const Vec2d>> build_quadtree2(std::span<const Vec2d> points, int max_levels, int max_points=1);
+QuadTree<std::span<const Vec2d>> build_quadtree(std::span<const Vec2d> points, int max_levels, int max_points=1);
 
 void compute_acceleration_direct(std::span<const Vec2d> positions, std::span<const double> masses, std::span<Vec2d> accelerations);
 void compute_acceleration_direct(std::span<const Vec2d> src_pos, std::span<const double> src_mass, std::span<const Vec2d> dst_pos, std::span<Vec2d> dst_acc);
 
-void compute_acceleration_multipoles(const Cells& cells, std::span<const Vec2d> positions, std::span<const double> masses, std::span<Vec2d> accelerations);
-void compute_acceleration_multipoles2(const QuadTree2<std::span<const Vec2d>>& cells, std::span<const Vec2d> positions, std::span<const double> masses, std::span<Vec2d> accelerations);
+void compute_acceleration_multipoles(const QuadTree<std::span<const Vec2d>>& cells, std::span<const Vec2d> positions, std::span<const double> masses, std::span<Vec2d> accelerations);

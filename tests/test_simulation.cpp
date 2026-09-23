@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <complex>
 #include <random>
 #include <ranges>
 
@@ -31,13 +30,6 @@ TEST_CASE(test_build_quadtree) {
     auto points = std::vector<Vec2d>({ {0.11, 0.11}, {0.1, 0.1}, {0.1, 0.11}, {0.11, 0.1} });
     std::sort(points.begin(), points.end(), static_cast<bool(*)(const Vec2d&, const Vec2d&)>(cmp_zcurve_bitmagic));
     auto cells = build_quadtree(points, 32, 1);
-    assert(cells.levels[6].size() == 4);
-}
-
-TEST_CASE(test_build_quadtree2) {
-    auto points = std::vector<Vec2d>({ {0.11, 0.11}, {0.1, 0.1}, {0.1, 0.11}, {0.11, 0.1} });
-    std::sort(points.begin(), points.end(), static_cast<bool(*)(const Vec2d&, const Vec2d&)>(cmp_zcurve_bitmagic));
-    auto cells = build_quadtree2(points, 32, 1);
     assert(cells.cells.size() == 10);
 }
 
@@ -71,79 +63,6 @@ void run_test(std::vector<Vec2d> positions) {
     run_test(positions, std::vector<double>(positions.size(), 1.0));
 }
 
-void run_test2(std::vector<Vec2d> positions, std::vector<double> masses) {
-    std::vector<Vec2d> accelerations_exepected(positions.size());
-    std::vector<Vec2d> accelerations(positions.size());
-
-    auto zipped = std::ranges::views::zip(positions, masses);
-    std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
-        return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
-    });
-    std::sort(positions.begin(), positions.end(), static_cast<bool(*)(const Vec2d&, const Vec2d&)>(cmp_zcurve_bitmagic));
-    compute_acceleration_direct(positions, masses, accelerations_exepected);
-
-    auto cells = build_quadtree2(positions, 16, 1);
-    compute_acceleration_multipoles2(cells, positions, masses, accelerations);
-    for (int i=0; i<accelerations.size(); ++i) {
-        assert(equal_approx(accelerations[i], accelerations_exepected[i], 0.01));
-    }
-}
-
-//TEST_CASE(test_compute_acceleration_trivial) {
-//    std::vector<Vec2d> positions;
-//    std::vector<double> masses;
-//    std::vector<Vec2d> accelerations;
-//
-//    Cells cells;
-//    cells.levels.emplace_back();
-//    cells.levels.emplace_back();
-//    cells.levels.emplace_back();
-//
-//    // empty space
-//    compute_acceleration_multipoles(cells, positions, masses, accelerations);
-//
-//    // single particle
-//    positions.emplace_back(0.1, 0.1);
-//    masses.emplace_back(1.0);
-//    accelerations.emplace_back(0.0, 0.0);
-//    cells.levels[0][Vec2i{ 0,0 }] = Cell{ {positions.begin(), positions.end()} };
-//    cells.levels[1][Vec2i{ 0,0 }] = Cell{ {positions.begin(), positions.end()} };
-//    compute_acceleration_multipoles(cells, positions, masses, accelerations);
-//    assert((accelerations[0] == Vec2{ 0.0, 0.0 }));
-//
-//    // two particles in the same cell
-//    positions.emplace_back(0.2, 0.1);
-//    masses.emplace_back(1.0);
-//    accelerations.emplace_back(0.0, 0.0);
-//    cells.levels[0][Vec2i{ 0,0 }] = Cell{ {positions.begin(), positions.end()} };
-//    cells.levels[1][Vec2i{ 0,0 }] = Cell{ {positions.begin(), positions.end()} };
-//    compute_acceleration_multipoles(cells, positions, masses, accelerations);
-//    assert(equal_approx(accelerations[0], Vec2{ 10.0, 0.0 }));
-//    assert(equal_approx(accelerations[1], Vec2{ -10.0, 0.0 }));
-//
-//    // two particles in neighbouring cells
-//    positions.at(1) = { 0.6, 0.1 };
-//    std::fill(accelerations.begin(), accelerations.end(), Vec2d{ 0.0, 0.0 });
-//    cells.levels[0][Vec2i{ 0,0 }] = Cell{ {positions.begin(), positions.end()} };
-//    cells.levels[1][Vec2i{ 0,0 }] = Cell{ {positions.begin(), positions.begin()+1} };
-//    cells.levels[1][Vec2i{ 1u<<31,0 }] = Cell{ {positions.begin()+1, positions.end()} };
-//    compute_acceleration_multipoles(cells, positions, masses, accelerations);
-//    assert(equal_approx(accelerations[0], Vec2{ 2.0, 0.0 }));
-//    assert(equal_approx(accelerations[1], Vec2{ -2.0, 0.0 }));
-//
-//    // two particles in far cells
-//    positions.at(1) = { 0.6, 0.1 };
-//    std::fill(accelerations.begin(), accelerations.end(), Vec2d{ 0.0, 0.0 });
-//    cells.levels[0][Vec2i{ 0,0 }] = Cell{ {positions.begin(), positions.end()} };
-//    cells.levels[1][Vec2i{ 0,0 }] = Cell{ {positions.begin(), positions.begin()+1} };
-//    cells.levels[1][Vec2i{ 1u<<31,0 }] = Cell{ {positions.begin()+1, positions.end()} };
-//    cells.levels[2][Vec2i{ 0,0 }] = Cell{ {positions.begin(), positions.begin()+1} };
-//    cells.levels[2][Vec2i{ 1u<<31,0 }] = Cell{ {positions.begin()+1, positions.end()} };
-//    std::fill(accelerations.begin(), accelerations.end(), Vec2d{ 0.0, 0.0 });
-//    compute_acceleration_multipoles(cells, positions, masses, accelerations);
-//    assert(equal_approx(accelerations[0], Vec2{ 2.0, 0.0 }, 1e-6));
-//    assert(equal_approx(accelerations[1], Vec2{ -2.0, 0.0 }, 1e-6));
-//}
 
 TEST_CASE(test_4_points_1) {
     run_test({
@@ -189,7 +108,6 @@ TEST_CASE(test_random) {
                 masses[i] = distrib(gen);
             }
             run_test(positions, masses);
-            run_test2(positions, masses);
         }
     }
 }

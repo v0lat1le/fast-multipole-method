@@ -35,25 +35,7 @@ void populate_system(std::span<Vec2d> positions, std::span<Vec2d> velocities, do
     }
 }
 
-std::vector<float> quad_tree_lines(const Cells& cells) {
-    std::vector<float> lineVertices;
-    for (std::size_t level=0; level<cells.levels.size(); ++level) {
-        for (auto& cell: cells.levels[level]) {
-            float x = std::ldexp(cell.first.x, -32);
-            float y = std::ldexp(cell.first.y, -32);
-            float cell_size = std::ldexp(1.0, -static_cast<int>(level));
-            lineVertices.insert(lineVertices.end(), {
-                x, y, x + cell_size, y,
-                x + cell_size, y, x + cell_size, y + cell_size,
-                x + cell_size, y + cell_size, x, y + cell_size,
-                x, y + cell_size, x, y
-            });
-        }
-    }
-    return lineVertices;
-}
-
-std::vector<float> quad_tree_lines(const QuadTree2<std::span<const Vec2d>>& cells) {
+std::vector<float> quadtree_lines(const QuadTree<std::span<const Vec2d>>& cells) {
     std::vector<float> lineVertices;
     for (auto& cell: cells.cells) {
         float x = std::ldexp(cell.coords.x, -32);
@@ -74,23 +56,20 @@ struct Simulation {
     std::vector<Vec2d> velocities;
     std::vector<double> masses;
     std::vector<Vec2d> accelerations;
-    //Cells quad_tree;
-    QuadTree2<std::span<const Vec2d>>quadtree2;
+    QuadTree<std::span<const Vec2d>>quadtree;
 
-    Simulation() : quadtree2({}) {}
+    Simulation() : quadtree({}) {}
 
     void init() {
         auto zipped = std::ranges::views::zip(positions, velocities, masses);
         std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
             return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
         });
-        //quad_tree = build_quadtree(positions, 16, 1);
-        quadtree2 = build_quadtree2(positions, 32, 8);
+        quadtree = build_quadtree(positions, 32, 8);
     }
 
     void update(double dt) {
-        //compute_acceleration_multipoles(quad_tree, positions, masses, accelerations);
-        compute_acceleration_multipoles2(quadtree2, positions, masses, accelerations);
+        compute_acceleration_multipoles(quadtree, positions, masses, accelerations);
         //compute_acceleration_direct(positions, masses, accelerations);
         for (int i=0; i<velocities.size(); i++) {
             velocities[i] += accelerations[i]*dt;
@@ -234,7 +213,7 @@ int main(void) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (display_quad_tree) {
-            std::vector<float> lineVertices = quad_tree_lines(simulation.quadtree2);
+            std::vector<float> lineVertices = quadtree_lines(simulation.quadtree);
             glBindVertexArray(quadTreeArrayObject);
             glBindBuffer(GL_ARRAY_BUFFER, quadTreeBufferObject);
             glBufferData(GL_ARRAY_BUFFER, lineVertices.size() * sizeof(float), lineVertices.data(), GL_DYNAMIC_DRAW);

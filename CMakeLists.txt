@@ -25,3 +25,7 @@ grtest_discover_tests(test_simulation)
 add_executable(test_quad_tree "tests/test_quad_tree.cpp")
 target_link_libraries(test_quad_tree PRIVATE grtest)
 grtest_discover_tests(test_quad_tree)
+
+add_executable(test_multipole "tests/test_multipole.cpp")
+target_link_libraries(test_multipole PRIVATE grtest)
+grtest_discover_tests(test_multipole)
