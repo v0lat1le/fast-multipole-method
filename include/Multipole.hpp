@@ -10,11 +10,35 @@ template <std::size_t P>
 struct Multipole {
     double q;
     std::array<std::complex<double>, P> a;
+
+    constexpr Multipole& operator+=(const Multipole& rhs) noexcept {
+        q += rhs.q;
+        for (int i=0; i<P; ++i) {
+            a[i] += rhs.a[i];
+        }
+        return *this;
+    }
+    friend constexpr Multipole operator+(Multipole lhs, const Multipole& rhs) noexcept {
+        lhs += rhs;
+        return lhs;
+    }
 };
 
 template <std::size_t P>
-Vec2d evaluate_multipole(const Multipole<P>& multipole, Vec2d dr) noexcept {
-    auto z_inv = 1.0/std::complex<double>(dr.x, dr.y);  // TODO: this explodes?
+constexpr Multipole<P> calculate_multipole(double charge, Vec2d dr) noexcept {
+    Multipole<P> result = {charge};
+    auto z = std::complex(dr.x, dr.y);
+    auto z_power = std::complex(charge);
+    for (int k=0; k<P; ++k) {
+        z_power *= z;
+        result.a[k] -= z_power/(k+1.0);
+    }
+    return result;
+}
+
+template <std::size_t P>
+constexpr Vec2d evaluate_multipole(const Multipole<P>& multipole, Vec2d dr) noexcept {
+    auto z_inv = 1.0/std::complex<double>(dr.x, dr.y);
     auto accel = multipole.q*z_inv;
     auto z_power = z_inv;
     for (int k=0; k<multipole.a.size(); ++k) {
@@ -28,15 +52,15 @@ template <std::size_t P>
 using Local = std::array<std::complex<double>, P>;
 
 template <std::size_t P>
-Vec2d evaluate_local(const Local<P>& local, Vec2d dr) noexcept {
+constexpr Vec2d evaluate_local(const Local<P>& local, Vec2d dr) noexcept {
     auto z = std::complex<double>(dr.x, dr.y);
     auto z_power = std::complex<double>(1.0);
     auto accel = std::complex<double>();
-    for (int l=1; l<P; ++l) {
-        accel += static_cast<double>(l)*local[l]*z_power;
-        z_power *= z;
+    for (int l=0; l<P; ++l) {
+        accel += (l+1.0)*local[l]*z_power;
+        z_power *= z;  // TODO: uneccesary mul on last iter
     }
-    return Vec2d(accel.real(), -accel.imag());
+    return Vec2d(-accel.real(), accel.imag());
 }
 
 template <std::size_t P>
@@ -59,11 +83,11 @@ struct Binomial {
 };
 
 template <std::size_t P>
-Multipole<P> translate_multipole(const Multipole<P>& multipole, Vec2d src) noexcept {
+constexpr Multipole<P> translate_multipole(const Multipole<P>& multipole, Vec2d dr) noexcept {
     static constexpr auto binoms = Binomial<P>();
     Multipole<P> result;
     result.q = multipole.q;
-    std::array<std::complex<double>, P+1> z_power = {1.0, std::complex<double>(src.x, src.y)};
+    std::array<std::complex<double>, P+1> z_power = {1.0, std::complex<double>(dr.x, dr.y)};
     for (int k=2; k<P+1; ++k) {
         z_power[k] = z_power[k-1]*z_power[1];
     }
@@ -77,39 +101,41 @@ Multipole<P> translate_multipole(const Multipole<P>& multipole, Vec2d src) noexc
 }
 
 template <std::size_t P>
-Local<P+1> convert_to_local(const Multipole<P>& multipole, Vec2d src) noexcept {
+constexpr Local<P> convert_to_local(const Multipole<P>& multipole, Vec2d dr) noexcept {
     static constexpr auto binoms = Binomial<2*P>();
-    auto z0 = std::complex<double>(src.x, src.y);
-    std::array<std::complex<double>, P+1> z_power = { 1.0/z0 };  // TODO: explodes
-    for (int k=1; k<P+1; ++k) {
+    auto z0 = std::complex<double>(dr.x, dr.y);
+    std::array<std::complex<double>, P> z_power = { 1.0/z0 };
+    for (int k=1; k<P; ++k) {
         z_power[k] = z_power[k-1]*z_power[0];
     }
-    Local<P+1> result = { multipole.q*std::log(-z0) };
+    Local<P> result = {}; // not computing b0 as it doesn't contribute to the force;
     for (int k=0; k<P; ++k) {
         auto v0 = multipole.a[k]*z_power[k];
-        if ((k&1) == 1) {
+        if ((k&1) == 0) {
             v0 = -v0;
         }
-        result[0] += v0;
-        for (int l=1; l<P+1; ++l) {
-            result[l] += v0*binoms.get(l+k-1, k);
+        for (int l=0; l<P; ++l) {
+            result[l] += v0*binoms.get(l+1+k, k);
         }
     }
-    for (int l=1; l<P+1; ++l) {
-        result[l] -= multipole.q/static_cast<double>(l);
-        result[l] *= z_power[l-1];
+    for (int l=0; l<P; ++l) {
+        result[l] -= multipole.q/(l+1.0);
+        result[l] *= z_power[l];
     }
     return result;
 }
 
 template <std::size_t P>
-Local<P> translate_local(const Local<P>& local, Vec2d src) noexcept {
+constexpr Local<P> translate_local(const Local<P>& local, Vec2d dr) noexcept {
+    auto z0 = std::complex<double>(dr.x, dr.y);
     auto result = local;
-    auto z0 = std::complex<double>(src.x, src.y);
     for (int j=0; j<P-1; ++j) {
-        for (int k=P-j-1; k<P-1; ++k) {
+        for (int k=P-j-2; k<P-1; ++k) {
             result[k] -= z0*result[k+1];
         }
+    }
+    for (int k=0; k<P-1; ++k) { // one extra round as we dropped b0
+        result[k] -= z0*result[k+1];
     }
     return result;
 }

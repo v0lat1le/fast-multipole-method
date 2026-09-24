@@ -83,25 +83,13 @@ QuadTree<Multipole<P>> compute_multipoles(const QuadTree<std::span<const Vec2d>>
         if (cell.children_count == 0) {
             std::ptrdiff_t offset = cell.value.data() - positions.data();
             for (int i=0; i<cell.value.size(); ++i) {
-                auto mass = masses[offset+i];
-                multipole.value.q += mass;
-                auto relative_coords = cell.value[i]-cell_center;
-                auto z = std::complex(relative_coords.x, relative_coords.y);
-                auto z_power = std::complex(mass);
-                for (int k=0; k<multipole.value.a.size(); ++k) {
-                    z_power *= z;
-                    multipole.value.a[k] -= z_power/(k+1.0);
-                }
+                multipole.value += calculate_multipole<P>(masses[offset+i], cell.value[i]-cell_center);
             }
         } else {
             for (const auto& child_mp: multipoles.children(multipole)) {
                 auto child_mask = 1u << (31-child_mp.level);
                 auto child_center = Vec2d(std::ldexp(child_mp.coords.x | child_mask, -32), std::ldexp(child_mp.coords.y | child_mask, -32));
-                auto translated = translate_multipole(child_mp.value, child_center-cell_center);
-                multipole.value.q += translated.q;
-                for (int k=0; k<P; ++k) {
-                    multipole.value.a[k] += translated.a[k];
-                }
+                multipole.value += translate_multipole(child_mp.value, child_center-cell_center);
             }
         }
     }
@@ -112,7 +100,7 @@ template<std::size_t P>
 void compute_acceleration_multipole(Vec2d src_pos, const Multipole<P>& multipole, std::span<const Vec2d> dst_pos, std::span<Vec2d> dst_acc) {
     for (std::size_t j=0; j<dst_pos.size(); j++) {
         auto dr = dst_pos[j] - src_pos;
-        auto z_inv = 1.0/std::complex(dr.x, dr.y);  // TODO: this explodes?
+        auto z_inv = 1.0/std::complex(dr.x, dr.y);
         auto accel = multipole.q*z_inv;
         auto z_power = z_inv;
         for (int k=0; k<multipole.a.size(); ++k) {
