@@ -22,7 +22,7 @@ TEST_CASE(test_calculate_and_evaluate_multipole) {
     std::uniform_real_distribution<double> distrib(0, 1);
 
     auto charge = distrib(gen);
-    auto multipole = calculate_multipole<16>(charge, Vec2d{});
+    auto multipole = calculate_multipole<32>(charge, Vec2d{});
     assert(multipole.q == charge);
     for (int i=0; i<multipole.a.size(); ++i) {
         assert(multipole.a[i] == 0.0);
@@ -36,19 +36,19 @@ TEST_CASE(test_calculate_and_evaluate_multipole) {
         auto dist = tests[i].x*tests[i].x + tests[i].y*tests[i].y;
         forces[i] = Vec2d{ -charge*tests[i].x/dist, -charge*tests[i].y/dist };
         auto f = evaluate_multipole(multipole, tests[i]);
-        assert(equal_approx(f, forces[i]));
+        assert(equal_approx(f, forces[i], 1e-9));
     }
 
     for (int j=0; j<16; ++j) {
         charge = distrib(gen);
         auto src = std::polar(distrib(gen), distrib(gen)*6.283);
-        multipole += calculate_multipole<16>(charge, Vec2d{src.real(), src.imag()});
+        multipole += calculate_multipole<multipole.a.size()>(charge, Vec2d{src.real(), src.imag()});
         for (int i=0; i<16; ++i) {
             auto dr = tests[i] - Vec2d{ src.real(), src.imag() };
             auto dist = dr.x*dr.x + dr.y*dr.y;
             forces[i] += Vec2d{ -charge*dr.x/dist, -charge*dr.y/dist };
             auto f = evaluate_multipole(multipole, tests[i]);
-            assert(equal_approx(f, forces[i], 1e-4));
+            assert(equal_approx(f, forces[i], 1e-6));
         }
     }
 }
@@ -60,13 +60,13 @@ TEST_CASE(test_translate_multipole) {
 
     auto multipole = calculate_multipole<32>(distrib(gen), Vec2d{});
     for (int i=0; i<16; ++i) {
-        auto dst = std::polar(distrib(gen)*0.5+1.0, distrib(gen)*6.283);
+        auto dst = std::polar(1.0, distrib(gen)*6.283);
         auto translated = translate_multipole(multipole, Vec2d{-dst.real(), -dst.imag()});
         for (int j=0; j<16; ++j) {
-            auto dr = std::polar(distrib(gen)+3.0, distrib(gen)*6.283);
+            auto dr = std::polar(distrib(gen)+4.0, distrib(gen)*6.283);
             auto f1 = evaluate_multipole(multipole, Vec2d{ dst.real()+dr.real(), dst.imag()+dr.imag() });
             auto f2 = evaluate_multipole(translated, Vec2d{ dr.real(), dr.imag() });
-            assert(equal_approx(f1, f2, 1e-4));
+            assert(equal_approx(f1, f2, 1e-6));
         }
     }
 
@@ -75,13 +75,13 @@ TEST_CASE(test_translate_multipole) {
         multipole += calculate_multipole<multipole.a.size()>(distrib(gen), Vec2d{ src.real(), src.imag() });
     }
     for (int i=0; i<16; ++i) {
-        auto dst = std::polar(distrib(gen)*0.5+1.0, distrib(gen)*6.283);
+        auto dst = std::polar(1.0, distrib(gen)*6.283);
         auto translated = translate_multipole(multipole, Vec2d{ -dst.real(), -dst.imag() });
         for (int j=0; j<16; ++j) {
-            auto dr = std::polar(distrib(gen)+3.0, distrib(gen)*6.283);
+            auto dr = std::polar(distrib(gen)+4.0, distrib(gen)*6.283);
             auto f1 = evaluate_multipole(multipole, Vec2d{ dst.real()+dr.real(), dst.imag()+dr.imag() });
             auto f2 = evaluate_multipole(translated, Vec2d{ dr.real(), dr.imag() });
-            assert(equal_approx(f1, f2, 1e-2));
+            assert(equal_approx(f1, f2, 1e-6));
         }
     }
 }
@@ -91,19 +91,19 @@ TEST_CASE(test_convert_to_local_and_evaluate) {
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> distrib(0, 1);
 
-    auto multipole = calculate_multipole<16>(distrib(gen), Vec2d{});
+    auto multipole = calculate_multipole<32>(distrib(gen), Vec2d{});
 
     for (int i=0; i<16; ++i) {
         auto dst = std::polar(distrib(gen)+3.0, distrib(gen)*6.283);
         auto local = convert_to_local(multipole, Vec2d{ -dst.real(), -dst.imag() });
         auto f1 = evaluate_multipole(multipole, Vec2d{ dst.real(), dst.imag() });
         auto f2 = evaluate_local(local, Vec2d{});
-        assert(equal_approx(f1, f2, 1e-4));
+        assert(equal_approx(f1, f2, 1e-6));
         for (int j=0; j<16; ++j) {
             auto dr = std::polar(distrib(gen), distrib(gen)*6.283);
             auto f3 = evaluate_multipole(multipole, Vec2d{ dst.real()+dr.real(), dst.imag()+dr.imag() });
             auto f4 = evaluate_local(local, Vec2d{ dr.real(), dr.imag() });
-            assert(equal_approx(f3, f4, 1e-4));
+            assert(equal_approx(f3, f4, 1e-6));
         }
     }
 
@@ -117,12 +117,12 @@ TEST_CASE(test_convert_to_local_and_evaluate) {
         auto local = convert_to_local(multipole, Vec2d{ -dst.real(), -dst.imag() });
         auto f1 = evaluate_multipole(multipole, Vec2d{ dst.real(), dst.imag() });
         auto f2 = evaluate_local(local, Vec2d{});
-        assert(equal_approx(f1, f2, 1e-4));
+        assert(equal_approx(f1, f2, 1e-6));
         for (int j=0; j<16; ++j) {
             auto dr = std::polar(distrib(gen), distrib(gen)*6.283);
             auto f3 = evaluate_multipole(multipole, Vec2d{ dst.real()+dr.real(), dst.imag()+dr.imag() });
             auto f4 = evaluate_local(local, Vec2d{ dr.real(), dr.imag() });
-            assert(equal_approx(f3, f4, 1e-4));
+            assert(equal_approx(f3, f4, 1e-6));
         }
     }
 }
@@ -141,12 +141,12 @@ TEST_CASE(test_translate_local) {
         auto translated = translate_local(local, Vec2d(-dst.real(), -dst.imag()));
         auto f1 = evaluate_local(local, Vec2d{ dst.real(), dst.imag() });
         auto f2 = evaluate_local(translated, Vec2d{});
-        assert(equal_approx(f1, f2, 1e-6));
+        assert(equal_approx(f1, f2, 1e-9));
         for (int j=0; j<16; ++j) {
             auto dr = std::polar(distrib(gen)*0.4, distrib(gen)*6.283);
             auto f3 = evaluate_local(local, Vec2d{ dst.real()+dr.real(), dst.imag()+dr.imag() });
             auto f4 = evaluate_local(translated, Vec2d{ dr.real(), dr.imag() });
-            assert(equal_approx(f3, f4, 1e-6));
+            assert(equal_approx(f3, f4, 1e-9));
         }
     }
 
@@ -161,12 +161,12 @@ TEST_CASE(test_translate_local) {
         auto translated = translate_local(local, Vec2d(-dst.real(), -dst.imag()));
         auto f1 = evaluate_local(local, Vec2d{ dst.real(), dst.imag() });
         auto f2 = evaluate_local(translated, Vec2d{});
-        assert(equal_approx(f1, f2, 1e-6));
+        assert(equal_approx(f1, f2, 1e-9));
         for (int j=0; j<16; ++j) {
             auto dr = std::polar(distrib(gen)*0.4, distrib(gen)*6.283);
             auto f3 = evaluate_local(local, Vec2d{ dst.real()+dr.real(), dst.imag()+dr.imag() });
             auto f4 = evaluate_local(translated, Vec2d{ dr.real(), dr.imag() });
-            assert(equal_approx(f3, f4, 1e-6));
+            assert(equal_approx(f3, f4, 1e-9));
         }
     }
 }

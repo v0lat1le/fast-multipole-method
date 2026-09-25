@@ -27,8 +27,8 @@ struct Multipole {
 template <std::size_t P>
 constexpr Multipole<P> calculate_multipole(double charge, Vec2d dr) noexcept {
     Multipole<P> result = {charge};
-    auto z = std::complex(dr.x, dr.y);
-    auto z_power = std::complex(charge);
+    auto z = std::complex<double>(dr.x, dr.y);
+    auto z_power = std::complex<double>(charge);
     for (int k=0; k<P; ++k) {
         z_power *= z;
         result.a[k] -= z_power/(k+1.0);
@@ -41,7 +41,7 @@ constexpr Vec2d evaluate_multipole(const Multipole<P>& multipole, Vec2d dr) noex
     auto z_inv = 1.0/std::complex<double>(dr.x, dr.y);
     auto accel = multipole.q*z_inv;
     auto z_power = z_inv;
-    for (int k=0; k<multipole.a.size(); ++k) {
+    for (int k=0; k<P; ++k) {
         z_power *= z_inv;
         accel -= (k+1.0)*multipole.a[k]*z_power;
     }
@@ -71,13 +71,13 @@ struct Binomial {
         for (int n=1; n<P; ++n) {
             coefficients[n*(n+1)/2] = 1.0;
             for (int k=1; k<n; ++k) {
-                coefficients[n*(n+1)/2+k] = get(n-1, k-1) + get(n-1, k);
+                coefficients[n*(n+1)/2+k] = operator()(n-1, k-1) + operator()(n-1, k);
             }
             coefficients[n*(n+1)/2+n] = 1.0;
         }
     }
 
-    constexpr double get(int n, int k) const noexcept {
+    constexpr double operator()(int n, int k) const noexcept {
         return coefficients[n*(n+1)/2 + k];
     }
 };
@@ -85,8 +85,7 @@ struct Binomial {
 template <std::size_t P>
 constexpr Multipole<P> translate_multipole(const Multipole<P>& multipole, Vec2d dr) noexcept {
     static constexpr auto binoms = Binomial<P>();
-    Multipole<P> result;
-    result.q = multipole.q;
+    Multipole<P> result = { multipole.q, {} };
     std::array<std::complex<double>, P+1> z_power = {1.0, std::complex<double>(dr.x, dr.y)};
     for (int k=2; k<P+1; ++k) {
         z_power[k] = z_power[k-1]*z_power[1];
@@ -94,7 +93,7 @@ constexpr Multipole<P> translate_multipole(const Multipole<P>& multipole, Vec2d 
     for (int l=0; l<P; ++l) {
         result.a[l] = -multipole.q*z_power[l+1]/(l+1.0);
         for (int k=0; k<=l; ++k) {
-            result.a[l] += multipole.a[k]*z_power[l-k]*binoms.get(l,k);
+            result.a[l] += multipole.a[k]*z_power[l-k]*binoms(l,k);
         }
     }
     return result;
@@ -115,7 +114,7 @@ constexpr Local<P> convert_to_local(const Multipole<P>& multipole, Vec2d dr) noe
             v0 = -v0;
         }
         for (int l=0; l<P; ++l) {
-            result[l] += v0*binoms.get(l+1+k, k);
+            result[l] += v0*binoms(l+1+k, k);
         }
     }
     for (int l=0; l<P; ++l) {

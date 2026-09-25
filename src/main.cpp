@@ -1,4 +1,4 @@
-﻿#define GLAD_GL_IMPLEMENTATION
+#define GLAD_GL_IMPLEMENTATION
 #include <glad/gl.h>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -65,12 +65,11 @@ struct Simulation {
         std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
             return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
         });
-        quadtree = build_quadtree(positions, 32, 8);
+        quadtree = build_quadtree(positions, 32, 16);
     }
 
     void update(double dt) {
         compute_acceleration_multipoles(quadtree, positions, masses, accelerations);
-        //compute_acceleration_direct(positions, masses, accelerations);
         for (int i=0; i<velocities.size(); i++) {
             velocities[i] += accelerations[i]*dt;
             accelerations[i] = {};
@@ -124,12 +123,10 @@ int main(void) {
     //        auto accelerations_exepected = simulation.accelerations;
     //        compute_acceleration_direct(simulation.positions, simulation.masses, accelerations_exepected);
 
-    //        //simulation.quad_tree = build_quadtree(simulation.positions, 16, 1);
-    //        simulation.quadtree2 = build_quadtree2(simulation.positions, 24, 8);
-    //        // compute_acceleration_multipoles(simulation.quad_tree, simulation.positions, simulation.masses, simulation.accelerations);
-    //        compute_acceleration_multipoles2(simulation.quadtree2, simulation.positions, simulation.masses, simulation.accelerations);
+    //        simulation.quadtree = build_quadtree(simulation.positions, 16, 1);
+    //        compute_acceleration_multipoles(simulation.quadtree, simulation.positions, simulation.masses, simulation.accelerations);
     //        for (int i=0; i<simulation.accelerations.size(); ++i) {
-    //            if (not equal_approx(simulation.accelerations[i], accelerations_exepected[i], 0.1)) {
+    //            if (not equal_approx(simulation.accelerations[i], accelerations_exepected[i], 1)) {
     //                found_bad = true;
     //                break;
     //            }

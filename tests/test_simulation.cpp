@@ -55,7 +55,7 @@ void run_test(std::vector<Vec2d> positions, std::vector<double> masses) {
     auto cells = build_quadtree(positions, 16, 1);
     compute_acceleration_multipoles(cells, positions, masses, accelerations);
     for (int i=0; i<accelerations.size(); ++i) {
-        assert(equal_approx(accelerations[i], accelerations_exepected[i], 0.01));
+        assert(equal_approx(accelerations[i], accelerations_exepected[i], 1e-5));
     }
 }
 
@@ -63,6 +63,13 @@ void run_test(std::vector<Vec2d> positions) {
     run_test(positions, std::vector<double>(positions.size(), 1.0));
 }
 
+TEST_CASE(test_3_points_1) {
+    run_test({
+        Vec2d{0.24400525008387419, 0.74469842234102612 },
+        Vec2d{0.31160388924049598, 0.64410738395399525 },
+        Vec2d{0.28948115461189083, 0.67172580077738531 },
+    });
+}
 
 TEST_CASE(test_4_points_1) {
     run_test({
