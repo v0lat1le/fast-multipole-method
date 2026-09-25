@@ -113,7 +113,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const Vec2d>>& cel
 
             for (auto& sibling: cells.siblings(cell)) {
                 std::ptrdiff_t dst_offset = sibling->value.data() - positions.data();
-                // TODO: local expansion from each particle to non-adjacent decsendants
+                // TODO: local expansion from each particle to non-adjacent children, otherwise direct
                 compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), sibling->value, accelerations.subspan(dst_offset, sibling->value.size()));
             }
         }
@@ -125,14 +125,13 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const Vec2d>>& cel
             if (not cells.is_adjacent(cell.level, cell.coords, parent_neighbour->level, parent_neighbour->coords)) {
                 if (parent_neighbour->children_count != 0) {  // not adjacent and parent_neighbour->level+1 == cell.level
                     for (auto& cousin: cells.children(*parent_neighbour)) {
-                        assert(cell.level == cousin.level);
                         auto cousin_cell_center = Vec2d(std::ldexp(cousin.coords.x | child_mask, -32), std::ldexp(cousin.coords.y | child_mask, -32));
                         auto cousin_local = convert_to_local(multipoles[idx], cell_center-cousin_cell_center);
                         for (int i=0; i<cousin_local.size(); ++i) {
                             locals[&cousin-cells.cells.data()][i] += cousin_local[i];
                         }
                     }
-                } else {  
+                } else {  // not adjacent and no children (but can be larger)
                     std::ptrdiff_t dst_offset = parent_neighbour->value.data() - positions.data();
                     for (int i=0; i< parent_neighbour->value.size(); ++i) {
                         accelerations[dst_offset+i] += evaluate_multipole(multipoles[idx], parent_neighbour->value[i]-cell_center);
@@ -141,7 +140,6 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const Vec2d>>& cel
             } else if (parent_neighbour->children_count != 0) {  // is adjacent and parent_neighbour->level+1 == cell.level
                 for (auto& cousin: cells.children(*parent_neighbour)) {
                     if (not cells.is_adjacent(cell.level, cell.coords, cousin.level, cousin.coords)) {
-                        assert(cell.level == cousin.level);
                         auto cousin_cell_center = Vec2d(std::ldexp(cousin.coords.x | child_mask, -32), std::ldexp(cousin.coords.y | child_mask, -32));
                         auto cousin_local = convert_to_local(multipoles[idx], cell_center-cousin_cell_center);
                         for (int i=0; i<cousin_local.size(); ++i) {
@@ -150,6 +148,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const Vec2d>>& cel
                     } else if (cell.children_count == 0) {
                         std::ptrdiff_t dst_offset = cousin.value.data() - positions.data();
                         std::ptrdiff_t src_offset = cell.value.data() - positions.data();
+                        // TODO: local expansion from each particle to non-adjacent children, otherwise direct
                         compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()),
                             cousin.value, accelerations.subspan(dst_offset, cousin.value.size()));
                     }

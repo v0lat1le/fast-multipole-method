@@ -4,8 +4,8 @@
 - [ ] QuadTree tests
 - [ ] Vectorize
 - [ ] Multi-thread
-- [ ] Use RGFW
 - [ ] Use Vulkan
+- [ ] Finish TODOs of O(n) impl
+- [ ] split into libs
 
 ### In Progress
-- [ ] O(n) impl

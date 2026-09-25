@@ -1,17 +1,19 @@
-#define GLAD_GL_IMPLEMENTATION
-#include <glad/gl.h>
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
-
-#include <algorithm>
+﻿#include <algorithm>
 #include <cmath>
 #include <random>
 #include <ranges>
 
+#define GLAD_GL_IMPLEMENTATION
+#include "glad/gl.h"
+#define NOMINMAX
+#define RGFW_IMPLEMENTATION
+#define RGFW_OPENGL
+#include "RGFW.h"
+#undef NOMINMAX
+
 #include "Vec2.hpp"
 #include "QuadTree.hpp"
 #include "simulation.hpp"
-
 
 
 void populate_system(std::span<Vec2d> positions, std::span<Vec2d> velocities, double r=0.5) {
@@ -74,10 +76,6 @@ struct Simulation {
             velocities[i] += accelerations[i]*dt;
             accelerations[i] = {};
             positions[i] += velocities[i]*dt;
-            if (positions[i].x <= 0.0 or positions[i].x >= 1.0 or positions[i].y <= 0.0 or positions[i].y >= 1.0) {
-                positions[i]={0.5, 0.5};
-                velocities[i]={ 0.0, 0.0 };
-            }
         }
 
         init();
@@ -122,7 +120,6 @@ int main(void) {
     //        std::fill(simulation.accelerations.begin(), simulation.accelerations.end(), Vec2d{ 0.0, 0.0 });
     //        auto accelerations_exepected = simulation.accelerations;
     //        compute_acceleration_direct(simulation.positions, simulation.masses, accelerations_exepected);
-
     //        simulation.quadtree = build_quadtree(simulation.positions, 16, 1);
     //        compute_acceleration_multipoles(simulation.quadtree, simulation.positions, simulation.masses, simulation.accelerations);
     //        for (int i=0; i<simulation.accelerations.size(); ++i) {
@@ -137,16 +134,18 @@ int main(void) {
     bool update_simulation = true;
     bool display_quad_tree = false;
 
-    if (!glfwInit()) {
-        return -1;
-    }
-    GLFWwindow* window = glfwCreateWindow(1280, 960, "FMM", NULL, NULL);
+    RGFW_init("fmm", RGFW_initOpenGL);
+
+    RGFW_window* window = RGFW_createWindow("FMM", 0, 0, 1280, 960, RGFW_windowCenter | RGFW_windowNoResize | RGFW_windowOpenGL);
     if (!window) {
-        glfwTerminate();
         return -1;
     }
-    glfwMakeContextCurrent(window);
-    gladLoadGL(glfwGetProcAddress);
+    RGFW_window_setExitKey(window, RGFW_keyEscape);
+    RGFW_window_makeCurrentContext_OpenGL(window);
+
+    if (!gladLoadGL((GLADloadfunc)RGFW_getProcAddress_OpenGL)) {
+        return -1;
+    }
 
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
@@ -198,7 +197,7 @@ int main(void) {
     int colorUniformLocation = glGetUniformLocation(shaderProgram, "inColor");
 
     std::vector<float> points(simulation.positions.size()*2);
-    while (!glfwWindowShouldClose(window)) {
+    while (RGFW_window_shouldClose(window) == RGFW_FALSE) {
         if (update_simulation) {
             simulation.update(0.0001);
         }
@@ -228,11 +227,11 @@ int main(void) {
         glUniform4f(colorUniformLocation, 1.0f, 1.0f, 1.0f, 1.0f);
         glDrawArrays(GL_POINTS, 0, points.size());
 
-        glfwSwapBuffers(window);
-
-        glfwPollEvents();
+        RGFW_window_swapBuffers_OpenGL(window);
+        RGFW_pollEvents();
     }
 
-    glfwTerminate();
+    RGFW_window_close(window);
+    RGFW_deinit();
     return 0;
 }

@@ -8,9 +8,6 @@
       "cacheVariables": {
         "CMAKE_CXX_STANDARD": "23",
         "CMAKE_CXX_STANDARD_REQUIRED": "ON",
-        "GLFW_BUILD_COCOA": "OFF",
-        "GLFW_BUILD_WAYLAND": "OFF",
-        "GLFW_BUILD_X11": "OFF",
         "CMAKE_BUILD_TYPE": "Debug"
       }
     },
@@ -47,8 +44,7 @@
     },
     {
       "name": "debug_msvc",
-      "configurePreset": "debug_msvc",
-      "configuration": "Debug"
+      "configurePreset": "debug_msvc"
     }
   ],
   "testPresets": [
@@ -62,8 +58,7 @@
     },
     {
       "name": "debug_msvc",
-      "configurePreset": "debug_msvc",
-      "configuration": "Debug"
+      "configurePreset": "debug_msvc"
     }
   ],
   "workflowPresets": [

@@ -1,6 +1,6 @@
-[submodule "glfw"]
-	path = glfw
-	url = https://github.com/glfw/glfw
-[submodule "grtest"]
-	path = grtest
+[submodule "external/grtest"]
+	path = external/grtest
 	url = https://github.com/v0lat1le/grtest
+[submodule "external/rgfw"]
+	path = external/rgfw
+	url = https://github.com/ColleagueRiley/RGFW

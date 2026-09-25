@@ -20,11 +20,11 @@ jobs:
             workflow: debug_clang
 
     steps:
-      - name: Install OpenGL
+      - name: Install apt packages
         if: matrix.os == 'ubuntu-24.04'
         uses: rishabhc32/apt-package-cache@v1.0.1
         with:
-          packages: libgl1-mesa-dev libxrandr-dev libxinerama-dev
+          packages: libgl1-mesa-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev
       - name: Checkout
         uses: actions/checkout@v7
         with:
