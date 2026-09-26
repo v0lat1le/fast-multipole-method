@@ -47,16 +47,16 @@ struct QuadTree {
     std::vector<Cell> cells;
 
     QuadTree(T value) {
-        cells.emplace_back(value, Vec2i{0,0}, 0, 1, 0, 0);
+        cells.emplace_back(std::move(value), Vec2i{0, 0}, 0u, 1u, std::uint8_t{0}, std::uint8_t{0});
     }
 
     Cell& add_cell(T value, Vec2i coords, Cell& parent) {
         assert(is_parent(coords, parent.level, parent.coords));
         assert(parent.children_count == 0 || parent.children+parent.children_count == cells.size());
-        auto parent_idx = &parent - cells.data();
-        cells.emplace_back(value, coords, parent_idx, 0, 0, parent.level+1);
+        auto parent_idx = static_cast<std::uint32_t>(&parent - cells.data());
+        cells.emplace_back(std::move(value), coords, parent_idx, 0u, std::uint8_t{0}, static_cast<std::uint8_t>(parent.level+1));
         parent.children_count += 1;
-        parent.children = cells.size() - parent.children_count;
+        parent.children = static_cast<std::uint32_t>(cells.size()) - parent.children_count;
         return cells.back();
     }
 
@@ -118,7 +118,7 @@ struct QuadTree {
         const auto overflow = std::numeric_limits<uint32_t>::max() - sibling_mask;
 
         bool has_x_neigbour = false;
-        std::uint32_t x_neigbour_coord;
+        std::uint32_t x_neigbour_coord = 0;
         if ((cell.coords.x & sibling_mask) == 0) {
             if (cell.coords.x >= sibling_mask) {
                 x_neigbour_coord = cell.coords.x-sibling_mask;
@@ -131,7 +131,7 @@ struct QuadTree {
             }
         }
         bool has_y_neigbour = false;
-        std::uint32_t y_neigbour_coord;
+        std::uint32_t y_neigbour_coord = 0;
         if ((cell.coords.y & sibling_mask) == 0) {
             if (cell.coords.y >= sibling_mask) {
                 y_neigbour_coord = cell.coords.y-sibling_mask;

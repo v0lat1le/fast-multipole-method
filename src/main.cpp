@@ -17,11 +17,11 @@
 
 
 void populate_system(std::span<Vec2d> positions, std::span<Vec2d> velocities, double r=0.5) {
-    double density = std::sqrt(positions.size())*0.3;
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> distrib(-r, r);
     Vec2d system_vel{};
+    double density = std::sqrt(positions.size())*0.3;
     for (std::size_t i=0; i<positions.size(); ++i) {
         double x, y;
         do {
@@ -37,9 +37,68 @@ void populate_system(std::span<Vec2d> positions, std::span<Vec2d> velocities, do
     }
 }
 
-std::vector<float> quadtree_lines(const QuadTree<std::span<const Vec2d>>& cells) {
+void make_ring(std::span<Vec2d> positions, std::span<Vec2d> velocities, std::span<double> masses, double r=0.5) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> distrib(-r, r);
+
+    positions[0] = { 0.5, 0.5 };
+    velocities[0] = { 0.0, 0.0 };
+    masses[0] = 100.0;
+
+    auto v = std::sqrt(masses[0]);
+    for (std::size_t i=1; i<positions.size(); ++i) {
+        double x, y, d2;
+        do {
+            x = distrib(gen);
+            y = distrib(gen);
+            d2 = x*x + y*y;
+        } while (d2 > r*r || d2 < 0.25*r*r);
+        positions[i] = { x+0.5, y+0.5 };
+        velocities[i] = { -y*v/std::sqrt(d2), x*v/std::sqrt(d2) };
+        masses[i] = 0.001;
+    }
+}
+
+void make_ring_and_planet(std::span<Vec2d> positions, std::span<Vec2d> velocities, std::span<double> masses, double r=0.5) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> distrib(-r, r);
+
+    auto M = 100.0;
+    auto v = std::sqrt(M);
+
+    positions[0]  = { 0.5, 0.5 };
+    velocities[0] = { 0.0, 0.0 };
+    masses[0]     = M;
+
+    positions[1]  = { 0.5, 0.5+r*0.75 };
+    velocities[1] = { -v, 0.0 };
+    masses[1]     = 1.0;
+
+    auto system_vel = Vec2d{ velocities[1].x, velocities[1].y };
+    for (std::size_t i=2; i<positions.size(); ++i) {
+        double x, y, d2;
+        do {
+            x = distrib(gen);
+            y = distrib(gen);
+            d2 = x*x + y*y;
+        } while (d2 > r*r || d2 < 0.25*r*r);
+        positions[i] = { x+0.5, y+0.5 };
+        velocities[i] = { -y*v/std::sqrt(d2), x*v/std::sqrt(d2) };
+        masses[i] = 0.001;
+        system_vel += Vec2d{velocities[i].x, velocities[i].y };
+    }
+
+    for (std::size_t i=0; i<velocities.size(); ++i) {
+        velocities[i] -= system_vel/velocities.size();
+    }
+}
+
+std::vector<float> quadtree_lines(const QuadTree<std::span<const Vec2d>>& cells, int max_level=7) {
     std::vector<float> lineVertices;
     for (auto& cell: cells.cells) {
+        if (cell.level > max_level) continue;
         float x = std::ldexp(cell.coords.x, -32);
         float y = std::ldexp(cell.coords.y, -32);
         float cell_size = std::ldexp(1.0, -static_cast<int>(cell.level));
@@ -67,16 +126,28 @@ struct Simulation {
         std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
             return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
         });
-        quadtree = build_quadtree(positions, 32, 16);
+        quadtree = build_quadtree(positions, 32, 32);
     }
 
     void update(double dt) {
         compute_acceleration_multipoles(quadtree, positions, masses, accelerations);
-        for (int i=0; i<velocities.size(); i++) {
+        // compute_acceleration_direct(positions, masses, accelerations);
+        std::size_t bad = 0;
+        for (std::size_t i=positions.size(); i-->0;) {
             velocities[i] += accelerations[i]*dt;
             accelerations[i] = {};
             positions[i] += velocities[i]*dt;
+            if (positions[i].x <= 0.0 || positions[i].x >= 1.0 || positions[i].y <= 0.0 || positions[i].y >= 1.0) {
+                bad++;
+                std::swap(positions[i], positions[positions.size()-bad]);
+                std::swap(velocities[i], velocities[velocities.size()-bad]);
+                std::swap(masses[i], masses[masses.size()-bad]);
+            }
         }
+        positions.resize(positions.size()-bad);
+        velocities.resize(velocities.size()-bad);
+        accelerations.resize(accelerations.size()-bad);
+        masses.resize(masses.size()-bad);
 
         init();
     }
@@ -99,9 +170,8 @@ bool equal_approx(Vec2d a, Vec2d b, double eps=1e-10) {
 
 int main(void) {
     Simulation simulation;
-    simulation.resize(10000);
-    std::fill(simulation.masses.begin(), simulation.masses.end(), 1.0);
-    populate_system(simulation.positions, simulation.velocities, 0.3);
+    simulation.resize(2000);
+    make_ring_and_planet(simulation.positions, simulation.velocities, simulation.masses, 0.3);
     simulation.init();
 
     //std::random_device rd;
@@ -131,12 +201,13 @@ int main(void) {
     //    }
     //}
 
-    bool update_simulation = true;
+    bool update_simulation = false;
+    bool step_once = false;
     bool display_quad_tree = false;
 
     RGFW_init("fmm", RGFW_initOpenGL);
 
-    RGFW_window* window = RGFW_createWindow("FMM", 0, 0, 1280, 960, RGFW_windowCenter | RGFW_windowNoResize | RGFW_windowOpenGL);
+    RGFW_window* window = RGFW_createWindow("FMM", 0, 0, 1200, 1200, RGFW_windowCenter | RGFW_windowNoResize | RGFW_windowOpenGL);
     if (!window) {
         return -1;
     }
@@ -196,11 +267,27 @@ int main(void) {
     glLinkProgram(shaderProgram);
     int colorUniformLocation = glGetUniformLocation(shaderProgram, "inColor");
 
-    std::vector<float> points(simulation.positions.size()*2);
+    std::vector<float> points;
     while (RGFW_window_shouldClose(window) == RGFW_FALSE) {
-        if (update_simulation) {
+        RGFW_event event;
+        while (RGFW_window_checkEvent(window, &event)) {
+            if (event.type == RGFW_keyPressed and event.key.value == RGFW_keySpace and not event.key.repeat) {
+                update_simulation = not update_simulation;
+            }
+            if (event.type == RGFW_keyPressed and event.key.value == RGFW_keyS and not event.key.repeat) {
+                step_once = true;
+            }
+            if (event.type == RGFW_keyPressed and event.key.value == RGFW_keyQ and not event.key.repeat) {
+                display_quad_tree = not display_quad_tree;
+            }
+        }
+
+
+        if (update_simulation or step_once) {
+            step_once = false;
             simulation.update(0.0001);
         }
+        points.resize(simulation.positions.size()*2);
         for (std::size_t i=0; i<simulation.positions.size(); ++i) {
             points[2*i] = simulation.positions[i].x;
             points[2*i+1] = simulation.positions[i].y;
@@ -228,7 +315,6 @@ int main(void) {
         glDrawArrays(GL_POINTS, 0, points.size());
 
         RGFW_window_swapBuffers_OpenGL(window);
-        RGFW_pollEvents();
     }
 
     RGFW_window_close(window);

@@ -25,7 +25,6 @@ QuadTree<std::span<const Vec2d>> build_quadtree(std::span<const Vec2d> points, i
             parent.coords + Vec2i{0, child_cell_size},
             parent.coords + Vec2i{child_cell_size, child_cell_size},
         };
-        std::uint8_t child_flag = 1;
         auto prev_child_cell_coords = parent.coords;
         for (const auto& child_cell_coords: child_cells_coords) {
             auto double_space_coords = Vec2d{ std::ldexp(child_cell_coords.x, -32), std::ldexp(child_cell_coords.y, -32) };
@@ -35,7 +34,6 @@ QuadTree<std::span<const Vec2d>> build_quadtree(std::span<const Vec2d> points, i
                 begin = end;
             }
             prev_child_cell_coords = child_cell_coords;
-            child_flag <<= 1;
         }
         if (begin != parent.value.end()) {
             cells.add_cell({ begin, parent.value.end() }, prev_child_cell_coords, parent);
@@ -49,7 +47,7 @@ void compute_acceleration_direct(std::span<const Vec2d> positions, std::span<con
     for (std::size_t i=0; i<positions.size(); i++) {
         for (std::size_t j=i+1; j<positions.size(); j++) {
             auto dr = positions[j] - positions[i];
-            double d2 = dr.x*dr.x + dr.y*dr.y + 1e-10;
+            double d2 = dr.x*dr.x + dr.y*dr.y;
             accelerations[i] += dr*masses[j]/d2;
             accelerations[j] -= dr*masses[i]/d2;
         }
@@ -60,7 +58,7 @@ void compute_acceleration_direct(std::span<const Vec2d> src_pos, std::span<const
     for (std::size_t i=0; i<src_pos.size(); i++) {
         for (std::size_t j=0; j<dst_pos.size(); j++) {
             auto dr = dst_pos[j] - src_pos[i];
-            double d2 = dr.x*dr.x + dr.y*dr.y + 1e-10;
+            double d2 = dr.x*dr.x + dr.y*dr.y;
             dst_acc[j] -= dr*src_mass[i]/d2;
         }
     }
@@ -97,6 +95,14 @@ void compute_acceleration_multipole(Vec2d src_pos, const Multipole<P>& multipole
     }
 }
 
+
+template<std::size_t P>
+void update_local(Local<P>& dst, const Local<P>& src) {
+    for (int i=0; i<P; ++i) {
+        dst[i] += src[i];
+    }
+}
+
 void compute_acceleration_multipoles(const QuadTree<std::span<const Vec2d>>& cells, std::span<const Vec2d> positions, std::span<const double> masses, std::span<Vec2d> accelerations) {
     auto multipoles = compute_multipoles<32>(cells, positions, masses);
     auto locals = std::vector<Local<32>>(cells.cells.size());
@@ -126,25 +132,18 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const Vec2d>>& cel
                 if (parent_neighbour->children_count != 0) {  // not adjacent and parent_neighbour->level+1 == cell.level
                     for (auto& cousin: cells.children(*parent_neighbour)) {
                         auto cousin_cell_center = Vec2d(std::ldexp(cousin.coords.x | child_mask, -32), std::ldexp(cousin.coords.y | child_mask, -32));
-                        auto cousin_local = convert_to_local(multipoles[idx], cell_center-cousin_cell_center);
-                        for (int i=0; i<cousin_local.size(); ++i) {
-                            locals[&cousin-cells.cells.data()][i] += cousin_local[i];
-                        }
+                        update_local(locals[&cousin-cells.cells.data()], convert_to_local(multipoles[idx], cell_center-cousin_cell_center));
                     }
                 } else {  // not adjacent and no children (but can be larger)
                     std::ptrdiff_t dst_offset = parent_neighbour->value.data() - positions.data();
-                    for (int i=0; i< parent_neighbour->value.size(); ++i) {
-                        accelerations[dst_offset+i] += evaluate_multipole(multipoles[idx], parent_neighbour->value[i]-cell_center);
-                    }
+                    compute_acceleration_multipole(cell_center, multipoles[idx], parent_neighbour->value, accelerations.subspan(dst_offset, parent_neighbour->value.size()));
                 }
             } else if (parent_neighbour->children_count != 0) {  // is adjacent and parent_neighbour->level+1 == cell.level
                 for (auto& cousin: cells.children(*parent_neighbour)) {
                     if (not cells.is_adjacent(cell.level, cell.coords, cousin.level, cousin.coords)) {
                         auto cousin_cell_center = Vec2d(std::ldexp(cousin.coords.x | child_mask, -32), std::ldexp(cousin.coords.y | child_mask, -32));
                         auto cousin_local = convert_to_local(multipoles[idx], cell_center-cousin_cell_center);
-                        for (int i=0; i<cousin_local.size(); ++i) {
-                            locals[&cousin-cells.cells.data()][i] += cousin_local[i];
-                        }
+                        update_local(locals[&cousin-cells.cells.data()], convert_to_local(multipoles[idx], cell_center-cousin_cell_center));
                     } else if (cell.children_count == 0) {
                         std::ptrdiff_t dst_offset = cousin.value.data() - positions.data();
                         std::ptrdiff_t src_offset = cell.value.data() - positions.data();
