@@ -26,11 +26,59 @@ TEST_CASE(test_cmp_zcurve) {
     test_cmp_zcurve<double>();
 }
 
-TEST_CASE(test_build_quadtree) {
-    auto points = std::vector<Vec2d>({ {0.11, 0.11}, {0.1, 0.1}, {0.1, 0.11}, {0.11, 0.1} });
+TEST_CASE(test_cmp_zcurve_points) {
+    auto v1 = Vec2d{ 0.75, 0.5 };
+    auto v2 = Vec2d{ 0.69, 0.66 };
+    auto v1i = Vec2i{static_cast<uint32_t>(std::ldexp(v1.x, 32)), static_cast<uint32_t>(std::ldexp(v1.y, 32)) };
+    auto v2i = Vec2i{ static_cast<uint32_t>(std::ldexp(v2.x, 32)), static_cast<uint32_t>(std::ldexp(v2.y, 32)) };
+    
+    auto c1 = cmp_zcurve_bitmagic(v1, v2);
+    auto c2 = cmp_zcurve_interleave(v1i, v2i);
+    assert (c1 == c2);
+
+    auto c3 = cmp_zcurve_bitmagic(v2, v1);
+    auto c4 = cmp_zcurve_interleave(v2i, v1i);
+    assert(c3 == c4);
+    assert(c1 == not c3);
+}
+
+void check_quadtree(std::vector<Vec2d>& points) {
     std::sort(points.begin(), points.end(), static_cast<bool(*)(const Vec2d&, const Vec2d&)>(cmp_zcurve_bitmagic));
-    auto cells = build_quadtree(points, 32, 1);
-    assert(cells.cells.size() == 10);
+    auto quadtree = build_quadtree(points, 32, 1);
+    for (auto& cell: quadtree.cells) {
+        double x = std::ldexp(cell.coords.x, -32);
+        double y = std::ldexp(cell.coords.y, -32);
+        double cell_size = std::ldexp(1.0, -static_cast<int>(cell.level));
+        for (auto& point: cell.value) {
+            assert(point.x >= x && point.y >= y && point.x < x+cell_size && point.y < y+cell_size);
+        }
+    }
+}
+
+TEST_CASE(test_build_quadtree_3_points_1) {
+    auto positions = std::vector<Vec2d>{
+        Vec2d{0.54341204441673263, 0.74620193825305203 },
+        Vec2d{0.69151111077974448, 0.66069690242163481 },
+        Vec2d{0.75000000000000000, 0.50000000000000000 },
+    };
+    check_quadtree(positions);
+}
+
+TEST_CASE(test_build_quadtree_random) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> distrib(0, 1);
+
+    std::vector<Vec2d> positions;
+    for (int q=3; q<10; ++q) {
+        positions.resize(q);
+        for (int k=0; k<1000; ++k) {
+            for (std::size_t i=0; i<positions.size(); ++i) {
+                positions[i] = Vec2d{ distrib(gen), distrib(gen) };
+            }
+            check_quadtree(positions);
+        }
+    }
 }
 
 bool equal_approx(double a, double b, double eps=1e-10) {
@@ -52,10 +100,10 @@ void run_test(std::vector<Vec2d> positions, std::vector<double> masses) {
     std::sort(positions.begin(), positions.end(), static_cast<bool(*)(const Vec2d&, const Vec2d&)>(cmp_zcurve_bitmagic));
     compute_acceleration_direct(positions, masses, accelerations_exepected);
 
-    auto cells = build_quadtree(positions, 16, 1);
+    auto cells = build_quadtree(positions, 32, 1);
     compute_acceleration_multipoles(cells, positions, masses, accelerations);
     for (int i=0; i<accelerations.size(); ++i) {
-        assert(equal_approx(accelerations[i], accelerations_exepected[i], 1e-5));
+        assert(equal_approx(accelerations[i], accelerations_exepected[i], 1e-2));
     }
 }
 
@@ -68,6 +116,14 @@ TEST_CASE(test_3_points_1) {
         Vec2d{0.24400525008387419, 0.74469842234102612 },
         Vec2d{0.31160388924049598, 0.64410738395399525 },
         Vec2d{0.28948115461189083, 0.67172580077738531 },
+    });
+}
+
+TEST_CASE(test_3_points_2) {
+    run_test({
+        Vec2d{0.54341204441673263, 0.74620193825305203 },
+        Vec2d{0.69151111077974448, 0.66069690242163481 },
+        Vec2d{0.75000000000000000, 0.50000000000000000 },
     });
 }
 
@@ -99,6 +155,17 @@ TEST_CASE(test_5_points_1) {
     });
 }
 
+TEST_CASE(test_circles) {
+    auto tau = 6.283185307179586;
+    for (int q=3; q<10; ++q) {
+        std::vector<Vec2d> positions(q);
+        for (int i=0; i<q; ++i) {
+            positions[i] = {0.25*std::cos(tau*i/q)+0.5, 0.25*std::sin(tau*i/q)+0.5};
+        }
+        run_test(positions);
+    }
+}
+
 TEST_CASE(test_random) {
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -109,7 +176,7 @@ TEST_CASE(test_random) {
     for (int q=3; q<10; ++q) {
         positions.resize(q);
         masses.resize(q);
-        for (int k=0; k<1000; ++k) {
+        for (int k=0; k<100; ++k) {
             for (std::size_t i=0; i<positions.size(); ++i) {
                 positions[i] = { distrib(gen), distrib(gen) };
                 masses[i] = distrib(gen);

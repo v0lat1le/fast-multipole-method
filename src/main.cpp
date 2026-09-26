@@ -1,4 +1,4 @@
-﻿#include <algorithm>
+#include <algorithm>
 #include <cmath>
 #include <random>
 #include <ranges>
@@ -16,20 +16,22 @@
 #include "simulation.hpp"
 
 
-void populate_system(std::span<Vec2d> positions, std::span<Vec2d> velocities, double r=0.5) {
+void populate_system(std::span<Vec2d> positions, std::span<Vec2d> velocities, std::span<double> masses, double r=0.5) {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> distrib(-r, r);
     Vec2d system_vel{};
     double density = std::sqrt(positions.size())*0.3;
     for (std::size_t i=0; i<positions.size(); ++i) {
-        double x, y;
+        double x, y, d2;
         do {
             x = distrib(gen)/5.0;
             y = distrib(gen);
+            d2 = x*x + y*y;
         } while (x*x + y*y > r*r);
         positions[i] = {x+0.5, y+0.5};
-        velocities[i] = {-y*density/r, x*density/r};
+        velocities[i] = {-y*density/std::sqrt(d2), x*density/std::sqrt(d2)};
+        masses[i] = 1.0;
         system_vel += velocities[i];
     }
     for (auto& vel: velocities) {
@@ -69,14 +71,13 @@ void make_ring_and_planet(std::span<Vec2d> positions, std::span<Vec2d> velocitie
     auto v = std::sqrt(M);
 
     positions[0]  = { 0.5, 0.5 };
-    velocities[0] = { 0.0, 0.0 };
+    velocities[0] = { v*0.01, 0.0 };
     masses[0]     = M;
 
     positions[1]  = { 0.5, 0.5+r*0.75 };
-    velocities[1] = { -v, 0.0 };
+    velocities[1] = { -v*0.99, 0.0 };
     masses[1]     = 1.0;
 
-    auto system_vel = Vec2d{ velocities[1].x, velocities[1].y };
     for (std::size_t i=2; i<positions.size(); ++i) {
         double x, y, d2;
         do {
@@ -87,11 +88,6 @@ void make_ring_and_planet(std::span<Vec2d> positions, std::span<Vec2d> velocitie
         positions[i] = { x+0.5, y+0.5 };
         velocities[i] = { -y*v/std::sqrt(d2), x*v/std::sqrt(d2) };
         masses[i] = 0.001;
-        system_vel += Vec2d{velocities[i].x, velocities[i].y };
-    }
-
-    for (std::size_t i=0; i<velocities.size(); ++i) {
-        velocities[i] -= system_vel/velocities.size();
     }
 }
 
@@ -131,7 +127,6 @@ struct Simulation {
 
     void update(double dt) {
         compute_acceleration_multipoles(quadtree, positions, masses, accelerations);
-        // compute_acceleration_direct(positions, masses, accelerations);
         std::size_t bad = 0;
         for (std::size_t i=positions.size(); i-->0;) {
             velocities[i] += accelerations[i]*dt;
@@ -170,36 +165,9 @@ bool equal_approx(Vec2d a, Vec2d b, double eps=1e-10) {
 
 int main(void) {
     Simulation simulation;
-    simulation.resize(2000);
-    make_ring_and_planet(simulation.positions, simulation.velocities, simulation.masses, 0.3);
+    simulation.resize(12000);
+    make_ring_and_planet(simulation.positions, simulation.velocities, simulation.masses, 0.4);
     simulation.init();
-
-    //std::random_device rd;
-    //std::mt19937 gen(rd());
-    //std::uniform_real_distribution<double> distrib(0, 1);
-
-    //bool found_bad = false;
-    //for (int q=3; q < 6 and not found_bad; ++q) {
-    //    simulation.resize(q);
-    //    std::fill(simulation.masses.begin(), simulation.masses.end(), 1.0);
-    //    for (int k=0; k<100000 and not found_bad; ++k) {
-    //        for (std::size_t i=0; i<simulation.positions.size(); ++i) {
-    //            simulation.positions[i] = { distrib(gen), distrib(gen) };
-    //        }
-    //        std::sort(simulation.positions.begin(), simulation.positions.end(), static_cast<bool(*)(const Vec2d&, const Vec2d&)>(cmp_zcurve_bitmagic));
-    //        std::fill(simulation.accelerations.begin(), simulation.accelerations.end(), Vec2d{ 0.0, 0.0 });
-    //        auto accelerations_exepected = simulation.accelerations;
-    //        compute_acceleration_direct(simulation.positions, simulation.masses, accelerations_exepected);
-    //        simulation.quadtree = build_quadtree(simulation.positions, 16, 1);
-    //        compute_acceleration_multipoles(simulation.quadtree, simulation.positions, simulation.masses, simulation.accelerations);
-    //        for (int i=0; i<simulation.accelerations.size(); ++i) {
-    //            if (not equal_approx(simulation.accelerations[i], accelerations_exepected[i], 1)) {
-    //                found_bad = true;
-    //                break;
-    //            }
-    //        }
-    //    }
-    //}
 
     bool update_simulation = false;
     bool step_once = false;
