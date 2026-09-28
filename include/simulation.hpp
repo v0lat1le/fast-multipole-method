@@ -3,11 +3,12 @@
 #include <bit>
 #include <span>
 
-#include "Vec2.hpp"
+#include "glm/vec2.hpp"
+
 #include "QuadTree.hpp"
 
 
-constexpr bool cmp_zcurve_interleave(const Vec2i& lhs, const Vec2i& rhs) noexcept {
+constexpr bool cmp_zcurve_interleave(const glm::uvec2& lhs, const glm::uvec2& rhs) noexcept {
     return interleave_bits(lhs.x, lhs.y) < interleave_bits(rhs.x, rhs.y);
 }
 
@@ -36,7 +37,7 @@ constexpr int msb_diff(T a, T b) noexcept {
 }
 
 template<typename T>
-constexpr bool cmp_zcurve_bitmagic(const Vec2<T>& lhs, const Vec2<T>& rhs) noexcept {
+constexpr bool cmp_zcurve_bitmagic(const glm::vec<2, T, glm::defaultp>& lhs, const glm::vec<2, T, glm::defaultp>& rhs) noexcept {
     if (msb_diff(lhs.y, rhs.y) < msb_diff(lhs.x, rhs.x)) {
         return lhs.x < rhs.x;
     } else {
@@ -44,9 +45,9 @@ constexpr bool cmp_zcurve_bitmagic(const Vec2<T>& lhs, const Vec2<T>& rhs) noexc
     }
 }
 
-QuadTree<std::span<const Vec2d>> build_quadtree(std::span<const Vec2d> points, int max_levels, int max_points=1);
+QuadTree<std::span<const glm::dvec2>> build_quadtree(std::span<const glm::dvec2> points, int max_levels, int max_points=1);
 
-void compute_acceleration_direct(std::span<const Vec2d> positions, std::span<const double> masses, std::span<Vec2d> accelerations);
-void compute_acceleration_direct(std::span<const Vec2d> src_pos, std::span<const double> src_mass, std::span<const Vec2d> dst_pos, std::span<Vec2d> dst_acc);
+void compute_acceleration_direct(std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations);
+void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc);
 
-void compute_acceleration_multipoles(const QuadTree<std::span<const Vec2d>>& cells, std::span<const Vec2d> positions, std::span<const double> masses, std::span<Vec2d> accelerations);
+void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& cells, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations);

@@ -11,16 +11,15 @@
 #include "RGFW.h"
 #undef NOMINMAX
 
-#include "Vec2.hpp"
 #include "QuadTree.hpp"
 #include "simulation.hpp"
 
 
-void populate_system(std::span<Vec2d> positions, std::span<Vec2d> velocities, std::span<double> masses, double r=0.5) {
+void populate_system(std::span<glm::dvec2> positions, std::span<glm::dvec2> velocities, std::span<double> masses, double r=0.5) {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> distrib(-r, r);
-    Vec2d system_vel{};
+    glm::dvec2 system_vel{};
     double density = std::sqrt(positions.size())*0.3;
     for (std::size_t i=0; i<positions.size(); ++i) {
         double x, y, d2;
@@ -35,11 +34,11 @@ void populate_system(std::span<Vec2d> positions, std::span<Vec2d> velocities, st
         system_vel += velocities[i];
     }
     for (auto& vel: velocities) {
-        vel -= system_vel/positions.size();
+        vel -= system_vel/static_cast<double>(positions.size());
     }
 }
 
-void make_ring(std::span<Vec2d> positions, std::span<Vec2d> velocities, std::span<double> masses, double r=0.5) {
+void make_ring(std::span<glm::dvec2> positions, std::span<glm::dvec2> velocities, std::span<double> masses, double r=0.5) {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> distrib(-r, r);
@@ -62,7 +61,7 @@ void make_ring(std::span<Vec2d> positions, std::span<Vec2d> velocities, std::spa
     }
 }
 
-void make_ring_and_planet(std::span<Vec2d> positions, std::span<Vec2d> velocities, std::span<double> masses, double r=0.5) {
+void make_ring_and_planet(std::span<glm::dvec2> positions, std::span<glm::dvec2> velocities, std::span<double> masses, double r=0.5) {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> distrib(-r, r);
@@ -91,7 +90,7 @@ void make_ring_and_planet(std::span<Vec2d> positions, std::span<Vec2d> velocitie
     }
 }
 
-std::vector<float> quadtree_lines(const QuadTree<std::span<const Vec2d>>& cells, int max_level=7) {
+std::vector<float> quadtree_lines(const QuadTree<std::span<const glm::dvec2>>& cells, int max_level=7) {
     std::vector<float> lineVertices;
     for (auto& cell: cells.cells) {
         if (cell.level > max_level) continue;
@@ -109,11 +108,11 @@ std::vector<float> quadtree_lines(const QuadTree<std::span<const Vec2d>>& cells,
 }
 
 struct Simulation {
-    std::vector<Vec2d> positions;
-    std::vector<Vec2d> velocities;
+    std::vector<glm::dvec2> positions;
+    std::vector<glm::dvec2> velocities;
     std::vector<double> masses;
-    std::vector<Vec2d> accelerations;
-    QuadTree<std::span<const Vec2d>>quadtree;
+    std::vector<glm::dvec2> accelerations;
+    QuadTree<std::span<const glm::dvec2>>quadtree;
 
     Simulation() : quadtree({}) {}
 
@@ -159,7 +158,7 @@ bool equal_approx(double a, double b, double eps=1e-10) {
     return std::abs(a - b) <= eps;
 }
 
-bool equal_approx(Vec2d a, Vec2d b, double eps=1e-10) {
+bool equal_approx(glm::dvec2 a, glm::dvec2 b, double eps=1e-10) {
     return equal_approx(a.x, b.x, eps) && equal_approx(a.y, b.y, eps);
 }
 

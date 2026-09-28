@@ -7,7 +7,7 @@
 #include <span>
 #include <vector>
 
-#include "Vec2.hpp"
+#include "glm/vec2.hpp"
 
 
 constexpr std::uint64_t spread_bits(std::uint32_t x) noexcept {
@@ -25,11 +25,11 @@ constexpr std::uint64_t interleave_bits(std::uint32_t x, std::uint32_t y) noexce
 }
 
 struct InterleaveHash {
-    static constexpr std::uint64_t operator()(const Vec2i& v) noexcept {
+    static constexpr std::uint64_t operator()(const glm::uvec2& v) noexcept {
         return interleave_bits(v.x, v.y);
     }
 
-    static constexpr std::uint64_t operator()(const Vec2d& v) noexcept {
+    static constexpr std::uint64_t operator()(const glm::dvec2& v) noexcept {
         return interleave_bits(static_cast<std::uint32_t>(std::ldexp(v.x, 32)), static_cast<std::uint32_t>(std::ldexp(v.y, 32)));
     }
 };
@@ -38,7 +38,7 @@ template<typename T>
 struct QuadTree {
     struct Cell {
         T value;
-        Vec2i coords;
+        glm::uvec2 coords;
         std::uint32_t parent;
         std::uint32_t children;
         std::uint8_t children_count;
@@ -47,10 +47,10 @@ struct QuadTree {
     std::vector<Cell> cells;
 
     QuadTree(T value) {
-        cells.emplace_back(std::move(value), Vec2i{0, 0}, 0u, 1u, std::uint8_t{0}, std::uint8_t{0});
+        cells.emplace_back(std::move(value), glm::uvec2{0, 0}, 0u, 1u, std::uint8_t{0}, std::uint8_t{0});
     }
 
-    Cell& add_cell(T value, Vec2i coords, Cell& parent) {
+    Cell& add_cell(T value, glm::uvec2 coords, Cell& parent) {
         assert(is_parent(coords, parent.level, parent.coords));
         assert(parent.children_count == 0 || parent.children+parent.children_count == cells.size());
         auto parent_idx = static_cast<std::uint32_t>(&parent - cells.data());
@@ -78,7 +78,7 @@ struct QuadTree {
         constexpr bool empty() const noexcept { return count == 0; }
     };
 
-    constexpr const Cell& find(std::uint8_t level, Vec2i coords, const Cell* cell) const noexcept {
+    constexpr const Cell& find(std::uint8_t level, glm::uvec2 coords, const Cell* cell) const noexcept {
         cell = cell == nullptr ? &cells.front() : cell;
         assert(level > cell->level);
 
@@ -162,7 +162,7 @@ struct QuadTree {
                 result.data[result.count++] = &x_cell;
                 if (x_cell.level == cell.level) {
                     for (const Cell& sibling: children(parent(x_cell))) {
-                        if (sibling.coords == Vec2i{ x_neigbour_coord, cell.coords.y ^ sibling_mask }) {
+                        if (sibling.coords == glm::uvec2{ x_neigbour_coord, cell.coords.y ^ sibling_mask }) {
                             result.data[result.count++] = &sibling;
                             break;
                         }
@@ -170,7 +170,7 @@ struct QuadTree {
                 }
                 if (x_cell.level+1 == cell.level) {
                     for (const Cell& sibling: children(x_cell)) {
-                        if (sibling.coords == Vec2i{ x_neigbour_coord, cell.coords.y ^ sibling_mask }) {
+                        if (sibling.coords == glm::uvec2{ x_neigbour_coord, cell.coords.y ^ sibling_mask }) {
                             result.data[result.count-1] = &sibling;
                             break;
                         }
@@ -189,7 +189,7 @@ struct QuadTree {
                 result.data[result.count++] = &y_cell;
                 if (y_cell.level == cell.level) {
                     for (const Cell& sibling: children(parent(y_cell))) {
-                        if (sibling.coords == Vec2i{ cell.coords.x ^ sibling_mask, y_neigbour_coord }) {
+                        if (sibling.coords == glm::uvec2{ cell.coords.x ^ sibling_mask, y_neigbour_coord }) {
                             result.data[result.count++] = &sibling;
                             break;
                         }
@@ -197,7 +197,7 @@ struct QuadTree {
                 }
                 if (y_cell.level+1 == cell.level) {
                     for (const Cell& sibling: children(y_cell)) {
-                        if (sibling.coords == Vec2i{ cell.coords.x ^ sibling_mask, y_neigbour_coord }) {
+                        if (sibling.coords == glm::uvec2{ cell.coords.x ^ sibling_mask, y_neigbour_coord }) {
                             result.data[result.count-1] = &sibling;
                             break;
                         }
@@ -213,7 +213,7 @@ struct QuadTree {
         return result;
     }
 
-    static constexpr bool is_parent(Vec2i coords, std::size_t parent_level, Vec2i parent) noexcept {
+    static constexpr bool is_parent(glm::uvec2 coords, std::size_t parent_level, glm::uvec2 parent) noexcept {
         if (parent_level == 0) {
             return true;
         }
@@ -221,7 +221,7 @@ struct QuadTree {
         return (coords.x & parent_mask) == parent.x and (coords.y & parent_mask) == parent.y;
     }
 
-    static constexpr bool is_adjacent(std::size_t a_level, Vec2i a, std::size_t b_level, Vec2i b) noexcept {
+    static constexpr bool is_adjacent(std::size_t a_level, glm::uvec2 a, std::size_t b_level, glm::uvec2 b) noexcept {
         assert(a_level < 32);
         assert(b_level <= a_level);
         auto a_size = std::uint64_t(1) << (32-a_level);  // uint64_t so we don't overflow
