@@ -16,6 +16,8 @@
 #define NOMINMAX
 #include "RGFW.h"
 
+#include "glm/gtc/random.hpp"
+
 #include "QuadTree.hpp"
 #include "simulation.hpp"
 
@@ -72,15 +74,16 @@ void make_ring_and_planet(std::span<glm::dvec2> positions, std::span<glm::dvec2>
     std::uniform_real_distribution<double> distrib(-r, r);
 
     auto M = 100.0;
+    auto m = 5.0;
     auto v = std::sqrt(M);
 
     positions[0]  = { 0.5, 0.5 };
-    velocities[0] = { v*0.01, 0.0 };
+    velocities[0] = { v*m/(M-m), 0.0 };
     masses[0]     = M;
 
     positions[1]  = { 0.5, 0.5+r*0.75 };
-    velocities[1] = { -v*0.99, 0.0 };
-    masses[1]     = 1.0;
+    velocities[1] = { -v*M/(M-m), 0.0};
+    masses[1]     = m;
 
     for (std::size_t i=2; i<positions.size(); ++i) {
         double x, y, d2;
@@ -92,6 +95,43 @@ void make_ring_and_planet(std::span<glm::dvec2> positions, std::span<glm::dvec2>
         positions[i] = { x+0.5, y+0.5 };
         velocities[i] = { -y*v/std::sqrt(d2), x*v/std::sqrt(d2) };
         masses[i] = 0.001;
+    }
+}
+
+void make_disk(std::span<glm::dvec2> positions, std::span<glm::dvec2> velocities, std::span<double> masses, double r=0.5) {
+    auto m = 0.01;
+    auto M = m*positions.size();
+    auto v = std::sqrt(M);
+
+    for (std::size_t i=0; i<positions.size(); ++i) {
+        auto pos = glm::diskRand(r);
+        positions[i] = pos + 0.5;
+        velocities[i] = glm::dvec2{ -pos.y, pos.x }*(v/r);
+        masses[i] = m;
+    }
+}
+
+void make_two_stars(std::span<glm::dvec2> positions, std::span<glm::dvec2> velocities, std::span<double> masses, double r=0.5) {
+    auto M = 0.01*positions.size()*0.5;
+    auto v = std::sqrt(M);
+    auto disk_r = 0.4*r;
+
+    for (std::size_t i=0; i<positions.size(); ++i) {
+        auto pos = glm::diskRand(disk_r);
+
+        positions[i] = pos;
+        velocities[i] = glm::dvec2{ -pos.y, pos.x }*(v/disk_r);
+        if (i%2) {
+            positions[i] += glm::dvec2{ r-disk_r, 0.0 };
+            auto w = positions[i]+(r-disk_r);
+            velocities[i] += glm::dvec2{ -w.y, w.x}*(v/w.length());
+        } else {
+            positions[i] -= glm::dvec2{ r-disk_r, 0.0 };
+            auto w = positions[i]-(r-disk_r);
+            velocities[i] += glm::dvec2{ -w.y, w.x }*(v/w.length());
+        }
+        positions[i] += 0.5;
+        masses[i] = 0.01;
     }
 }
 
@@ -196,9 +236,9 @@ int main(void) {
 #ifndef NDEBUG
     simulation.resize(1000);
 #else
-    simulation.resize(12000);
+    simulation.resize(20000);
 #endif
-    make_ring_and_planet(simulation.positions, simulation.velocities, simulation.masses, 0.4);
+    make_two_stars(simulation.positions, simulation.velocities, simulation.masses, 0.3);
     simulation.init();
 
     bool step_once = false;

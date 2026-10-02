@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <complex>
 #include <cmath>
+#include <mutex>
+#include <thread>
 
 #include "glm/geometric.hpp"
 
@@ -109,6 +111,8 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
     auto multipoles = compute_multipoles<20>(quadtree, positions, masses);
     auto locals = std::vector<Local<20>>(quadtree.cells.size());
 
+    std::array<std::vector<std::tuple<int, int, glm::dvec2>>, 4> queues;
+
     for (std::size_t idx=1; idx<quadtree.cells.size(); ++idx) {
         auto& cell = quadtree.cells[idx];
 
@@ -134,7 +138,8 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
                 if (parent_neighbour->children_count != 0) {  // not adjacent and parent_neighbour->level+1 == cell.level
                     for (auto& cousin: quadtree.children(*parent_neighbour)) {
                         auto cousin_cell_center = glm::ldexp(glm::dvec2{cousin.coords | child_mask}, glm::ivec2{-32});
-                        update_local(locals[&cousin-quadtree.cells.data()], convert_to_local(multipoles[idx], cell_center-cousin_cell_center));
+                        auto local_idx = &cousin-quadtree.cells.data();
+                        queues[local_idx%queues.size()].push_back({ local_idx , idx, cell_center-cousin_cell_center });
                     }
                 } else {  // not adjacent and no children (but can be larger)
                     std::ptrdiff_t dst_offset = parent_neighbour->value.data() - positions.data();
@@ -144,8 +149,8 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
                 for (auto& cousin: quadtree.children(*parent_neighbour)) {
                     if (not quadtree.is_adjacent(cell.level, cell.coords, cousin.level, cousin.coords)) {
                         auto cousin_cell_center = glm::ldexp(glm::dvec2{ cousin.coords | child_mask }, glm::ivec2{ -32 });
-                        auto cousin_local = convert_to_local(multipoles[idx], cell_center-cousin_cell_center);
-                        update_local(locals[&cousin-quadtree.cells.data()], convert_to_local(multipoles[idx], cell_center-cousin_cell_center));
+                        auto local_idx = &cousin-quadtree.cells.data();
+                        queues[local_idx%queues.size()].push_back({ local_idx , idx, cell_center-cousin_cell_center });
                     } else if (cell.children_count == 0) {
                         std::ptrdiff_t dst_offset = cousin.value.data() - positions.data();
                         std::ptrdiff_t src_offset = cell.value.data() - positions.data();
@@ -161,6 +166,18 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
                     parent_neighbour->value, accelerations.subspan(dst_offset, parent_neighbour->value.size()));
             }
         }
+    }
+
+    {
+        auto thread_func = [&](int id) {
+            for (auto& [local_idx, multipole_idx, dr]: queues[id]) {
+                update_local(locals[local_idx], convert_to_local(multipoles[multipole_idx], dr));
+            }
+        };
+        std::array<std::jthread, queues.size()> threads;
+        for (int i=0; i<threads.size(); ++i) {
+            threads[i] = std::jthread{ thread_func, i };
+        };
     }
 
     for (std::size_t idx=1; idx<quadtree.cells.size(); ++idx) {

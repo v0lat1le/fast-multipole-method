@@ -2,11 +2,10 @@
 
 ### To Do
 - [ ] faster M2L
-- [ ] Multi-thread ?
-- [ ] Use Vulkan
 - [ ] split into libs
 - [ ] QuadTree tests
-- [ ] Finish TODOs of O(n) impl
+- [ ] finish TODOs of O(n) impl
+- [ ] merge particles
+- [ ] particle render size based on mass
 
 ### In Progress
-- [ ] merge particles?
