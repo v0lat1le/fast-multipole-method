@@ -18,7 +18,6 @@ target_compile_definitions(external_glm INTERFACE GLM_FORCE_MESSAGES GLM_FORCE_I
 add_executable (fast_multipole_method "src/main.cpp" "src/simulation.cpp")
 target_include_directories(fast_multipole_method PRIVATE "include" ${EXTERNAL_DIR}/rgfw ${EXTERNAL_DIR}/glad/include)
 target_link_libraries(fast_multipole_method PRIVATE external::glm)
-target_compile_options(fast_multipole_method PRIVATE "-fexperimental-library")
 if(WIN32)
 	if(${FMM_RENDERER} STREQUAL vulkan)
 		find_package (Vulkan 1.4.335 REQUIRED)
