@@ -2,14 +2,19 @@
 #include <cmath>
 #include <random>
 #include <ranges>
+#include <memory>
 
+#ifdef FMM_RENDERER_VULKAN
+#define RGFW_VULKAN
+#else
 #define GLAD_GL_IMPLEMENTATION
 #include "glad/gl.h"
-#define NOMINMAX
-#define RGFW_IMPLEMENTATION
 #define RGFW_OPENGL
+#endif
+
+#define RGFW_IMPLEMENTATION
+#define NOMINMAX
 #include "RGFW.h"
-#undef NOMINMAX
 
 #include "QuadTree.hpp"
 #include "simulation.hpp"
@@ -57,7 +62,7 @@ void make_ring(std::span<glm::dvec2> positions, std::span<glm::dvec2> velocities
         } while (d2 > r*r || d2 < 0.25*r*r);
         positions[i] = { x+0.5, y+0.5 };
         velocities[i] = { -y*v/std::sqrt(d2), x*v/std::sqrt(d2) };
-        masses[i] = 0.001;
+        masses[i] = 0.01;
     }
 }
 
@@ -121,7 +126,33 @@ struct Simulation {
         std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
             return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
         });
-        quadtree = build_quadtree(positions, 32, 32);
+
+        //std::size_t bad = 0;
+        //for (std::size_t i=positions.size()-1; i>0; --i) {
+        //    for (std::size_t j=i-1; j>1; --j) {
+        //        auto dr = positions[i]-positions[j];
+        //        if (dr.x*dr.x + dr.y*dr.y > 1e-6) {
+        //            i = j-1;
+        //            break;
+        //        }
+        //        velocities[i] = (velocities[j]*masses[j] + velocities[i]*masses[i])/(masses[j]+masses[i]);
+        //        masses[i] += masses[j];
+        //        bad++;
+        //        std::swap(positions[j], positions[positions.size()-bad]);
+        //        std::swap(velocities[j], velocities[velocities.size()-bad]);
+        //        std::swap(masses[j], masses[masses.size()-bad]);
+        //    }
+        //}
+        //positions.resize(positions.size()-bad);
+        //velocities.resize(velocities.size()-bad);
+        //accelerations.resize(accelerations.size()-bad);
+        //masses.resize(masses.size()-bad);
+        //zipped = std::ranges::views::zip(positions, velocities, masses);
+
+        std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
+            return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
+        });
+        quadtree = build_quadtree(positions, 32, 20);
     }
 
     void update(double dt) {
@@ -154,134 +185,65 @@ struct Simulation {
     }
 };
 
-bool equal_approx(double a, double b, double eps=1e-10) {
-    return std::abs(a - b) <= eps;
-}
-
-bool equal_approx(glm::dvec2 a, glm::dvec2 b, double eps=1e-10) {
-    return equal_approx(a.x, b.x, eps) && equal_approx(a.y, b.y, eps);
-}
+#ifdef FMM_RENDERER_VULKAN
+#include "VulkanRenderer.cpp"
+#else
+#include "OpenGLRenderer.cpp"
+#endif
 
 int main(void) {
     Simulation simulation;
+#ifndef NDEBUG
+    simulation.resize(1000);
+#else
     simulation.resize(12000);
+#endif
     make_ring_and_planet(simulation.positions, simulation.velocities, simulation.masses, 0.4);
     simulation.init();
 
-    bool update_simulation = false;
     bool step_once = false;
-    bool display_quad_tree = false;
+    int steps = 0;
 
+#ifdef FMM_RENDERER_VULKAN
+    RGFW_init("fmm", RGFW_initVulkan);
+#else
     RGFW_init("fmm", RGFW_initOpenGL);
+#endif
 
-    RGFW_window* window = RGFW_createWindow("FMM", 0, 0, 1200, 1200, RGFW_windowCenter | RGFW_windowNoResize | RGFW_windowOpenGL);
+    RGFW_window* window = RGFW_createWindow("FMM", 0, 0, 1200, 1200, RGFW_windowCenter);
     if (!window) {
         return -1;
-    }
+    };
     RGFW_window_setExitKey(window, RGFW_keyEscape);
-    RGFW_window_makeCurrentContext_OpenGL(window);
 
-    if (!gladLoadGL((GLADloadfunc)RGFW_getProcAddress_OpenGL)) {
-        return -1;
-    }
+    Renderer renderer(window);
 
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-
-    unsigned int pointsArrayObject, pointsBufferObject, quadTreeArrayObject, quadTreeBufferObject;
-    glGenVertexArrays(1, &pointsArrayObject);
-    glGenBuffers(1, &pointsBufferObject);
-
-    glBindVertexArray(pointsArrayObject);
-    glBindBuffer(GL_ARRAY_BUFFER, pointsBufferObject);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2*sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    glGenVertexArrays(1, &quadTreeArrayObject);
-    glGenBuffers(1, &quadTreeBufferObject);
-    glBindVertexArray(quadTreeArrayObject);
-    glBindBuffer(GL_ARRAY_BUFFER, quadTreeBufferObject);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    const GLchar* vertexShaderSource =
-    R"(#version 330 core
-    layout(location = 0) in vec2 aPos;
-    void main() {
-        gl_Position = vec4(2*aPos-vec2(1,1), 0.0, 1.0);
-        gl_PointSize = 1.2;
-    })";
-    unsigned int vertexShader;
-    vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
-
-    const GLchar* fragmentShaderSource =
-    R"(#version 330 core
-    uniform vec4 inColor;
-    out vec4 FragColor;
-    void main() {
-        FragColor = inColor;
-    })";
-    unsigned int fragmentShader;
-    fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-
-    unsigned int shaderProgram;
-    shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-    int colorUniformLocation = glGetUniformLocation(shaderProgram, "inColor");
-
-    std::vector<float> points;
     while (RGFW_window_shouldClose(window) == RGFW_FALSE) {
         RGFW_event event;
         while (RGFW_window_checkEvent(window, &event)) {
             if (event.type == RGFW_keyPressed and event.key.value == RGFW_keySpace and not event.key.repeat) {
-                update_simulation = not update_simulation;
+                steps = steps>0 ? 0 : 1;
             }
             if (event.type == RGFW_keyPressed and event.key.value == RGFW_keyS and not event.key.repeat) {
                 step_once = true;
             }
             if (event.type == RGFW_keyPressed and event.key.value == RGFW_keyQ and not event.key.repeat) {
-                display_quad_tree = not display_quad_tree;
+                renderer.display_quad_tree = not renderer.display_quad_tree;
+            }
+            if (event.type == RGFW_keyPressed and event.key.value == RGFW_keyRight and not event.key.repeat) {
+                steps += 1;
+            }
+            if (event.type == RGFW_keyPressed and event.key.value == RGFW_keyLeft and not event.key.repeat) {
+                steps -= 1;
             }
         }
 
-
-        if (update_simulation or step_once) {
+        for (int i=0; i<steps or step_once; ++i) {
             step_once = false;
             simulation.update(0.0001);
         }
-        points.resize(simulation.positions.size()*2);
-        for (std::size_t i=0; i<simulation.positions.size(); ++i) {
-            points[2*i] = simulation.positions[i].x;
-            points[2*i+1] = simulation.positions[i].y;
-        }
-        
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        if (display_quad_tree) {
-            std::vector<float> lineVertices = quadtree_lines(simulation.quadtree);
-            glBindVertexArray(quadTreeArrayObject);
-            glBindBuffer(GL_ARRAY_BUFFER, quadTreeBufferObject);
-            glBufferData(GL_ARRAY_BUFFER, lineVertices.size() * sizeof(float), lineVertices.data(), GL_DYNAMIC_DRAW);
-            glLineWidth(1.0f);
-            glUseProgram(shaderProgram);
-            glUniform4f(colorUniformLocation, 0.0f, 0.0f, 0.6f, 1.0f);
-            glDrawArrays(GL_LINES, 0, lineVertices.size()/2);
-        }
-
-        glBindVertexArray(pointsArrayObject);
-        glBindBuffer(GL_ARRAY_BUFFER, pointsBufferObject);
-        glBufferData(GL_ARRAY_BUFFER, points.size() * sizeof(float), points.data(), GL_DYNAMIC_DRAW);
-        glEnable(GL_PROGRAM_POINT_SIZE);
-        glUseProgram(shaderProgram);
-        glUniform4f(colorUniformLocation, 1.0f, 1.0f, 1.0f, 1.0f);
-        glDrawArrays(GL_POINTS, 0, points.size());
-
-        RGFW_window_swapBuffers_OpenGL(window);
+        renderer.render(simulation);
     }
 
     RGFW_window_close(window);

@@ -106,8 +106,8 @@ void update_local(Local<P>& dst, const Local<P>& src) {
 }
 
 void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations) {
-    auto multipoles = compute_multipoles<32>(quadtree, positions, masses);
-    auto locals = std::vector<Local<32>>(quadtree.cells.size());
+    auto multipoles = compute_multipoles<20>(quadtree, positions, masses);
+    auto locals = std::vector<Local<20>>(quadtree.cells.size());
 
     for (std::size_t idx=1; idx<quadtree.cells.size(); ++idx) {
         auto& cell = quadtree.cells[idx];
