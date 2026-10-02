@@ -124,11 +124,11 @@ void make_two_stars(std::span<glm::dvec2> positions, std::span<glm::dvec2> veloc
         if (i%2) {
             positions[i] += glm::dvec2{ r-disk_r, 0.0 };
             auto w = positions[i]+(r-disk_r);
-            velocities[i] += glm::dvec2{ -w.y, w.x}*(v/w.length());
+            velocities[i] += glm::dvec2{ -w.y, w.x }*(v/glm::length(w));
         } else {
             positions[i] -= glm::dvec2{ r-disk_r, 0.0 };
             auto w = positions[i]-(r-disk_r);
-            velocities[i] += glm::dvec2{ -w.y, w.x }*(v/w.length());
+            velocities[i] += glm::dvec2{ -w.y, w.x }*(v/glm::length(w));
         }
         positions[i] += 0.5;
         masses[i] = 0.01;
