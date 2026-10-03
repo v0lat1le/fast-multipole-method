@@ -51,6 +51,7 @@ struct QuadTree {
     }
 
     Cell& add_cell(T value, glm::uvec2 coords, Cell& parent) {
+        assert(parent.level < 31);
         assert(is_parent(coords, parent.level, parent.coords));
         assert(parent.children_count == 0 || parent.children+parent.children_count == cells.size());
         auto parent_idx = static_cast<std::uint32_t>(&parent - cells.data());

@@ -185,11 +185,11 @@ struct Simulation {
         //accelerations.resize(accelerations.size()-bad);
         //masses.resize(masses.size()-bad);
         //zipped = std::ranges::views::zip(positions, velocities, masses);
+        //std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
+        //    return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
+        //});
 
-        std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
-            return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
-        });
-        quadtree = build_quadtree(positions, 32, 20);
+        quadtree = build_quadtree(positions, 31, 20);
     }
 
     void update(double dt) {

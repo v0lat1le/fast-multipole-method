@@ -65,7 +65,7 @@ target_include_directories(test_simulation PRIVATE "include")
 target_link_libraries(test_simulation PRIVATE grtest external::glm)
 grtest_discover_tests(test_simulation)
 
-add_executable(test_quad_tree "tests/test_quad_tree.cpp")
+add_executable(test_quad_tree "tests/test_quadtree.cpp")
 target_include_directories(test_quad_tree PRIVATE "include")
 target_link_libraries(test_quad_tree PRIVATE grtest external::glm)
 grtest_discover_tests(test_quad_tree)
