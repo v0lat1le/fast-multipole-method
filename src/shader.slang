@@ -16,7 +16,9 @@ VertexOutput vertMain(uint vertex_index : SV_VertexID, uniform ShaderData data) 
     VertexOutput output;
     output.sv_position = float4(data.pos[vertex_index]*2.0-1.0, 0.0, 1.0);
     output.color = data.color;
-	output.pointSize = clamp(2.0*sqrt(data.mass[vertex_index]), 1.0, 10.0);
+	if (data.mode == 0) {
+	    output.pointSize = clamp(2.0*sqrt(data.mass[vertex_index]), 1.0, 10.0);
+	}
     return output;
 }
 

@@ -568,6 +568,8 @@ struct Renderer {
             return;
         }
 
+        vkWaitForFences(device, 1, in_flight_fences.data()+frame_index, true, UINT64_MAX);
+
         std::byte* frame_working_mem = working_memory.cpu + frame_index*16*1024*1024;
         for (std::size_t i=0; i<simulation.positions.size(); ++i) {
             reinterpret_cast<glm::vec2*>(frame_working_mem)[i] = simulation.positions[i];
@@ -583,11 +585,10 @@ struct Renderer {
             for (std::size_t i=0; i<lineVertices.size(); ++i) {
                 reinterpret_cast<glm::vec2*>(frame_working_mem)[i] = lineVertices[i];
             }
-            n_lines = lineVertices.size()/2;
+            n_lines = lineVertices.size();
             frame_working_mem += lineVertices.size()*sizeof(glm::vec2);
         }
 
-        vkWaitForFences(device, 1, in_flight_fences.data()+frame_index, true, UINT64_MAX);
         if (window->w != swapchain_extent.width || window->h != swapchain_extent.height) {
             vkDeviceWaitIdle(device);
 

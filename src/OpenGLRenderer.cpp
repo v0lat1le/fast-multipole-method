@@ -87,7 +87,7 @@ struct Renderer {
         glEnable(GL_PROGRAM_POINT_SIZE);
         glUseProgram(shaderProgram);
         glUniform4f(colorUniformLocation, 1.0f, 1.0f, 1.0f, 1.0f);
-        glDrawArrays(GL_POINTS, 0, points.size());
+        glDrawArrays(GL_POINTS, 0, points.size()/2);
 
 		RGFW_window_swapBuffers_OpenGL(window);
     }
