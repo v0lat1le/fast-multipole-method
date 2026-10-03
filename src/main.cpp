@@ -114,7 +114,7 @@ void make_disk(std::span<glm::dvec2> positions, std::span<glm::dvec2> velocities
 void make_two_stars(std::span<glm::dvec2> positions, std::span<glm::dvec2> velocities, std::span<double> masses, double r=0.5) {
     auto M = 0.01*positions.size()*0.5;
     auto v = std::sqrt(M);
-    auto disk_r = 0.4*r;
+    auto disk_r = 0.1*r;
 
     for (std::size_t i=0; i<positions.size(); ++i) {
         auto pos = glm::diskRand(disk_r);
@@ -124,30 +124,29 @@ void make_two_stars(std::span<glm::dvec2> positions, std::span<glm::dvec2> veloc
         if (i%2) {
             positions[i] += glm::dvec2{ r-disk_r, 0.0 };
             auto w = positions[i]+(r-disk_r);
-            velocities[i] += glm::dvec2{ -w.y, w.x }*(v/glm::length(w));
+            velocities[i] += glm::dvec2{ 0, v*0.2 };
         } else {
             positions[i] -= glm::dvec2{ r-disk_r, 0.0 };
             auto w = positions[i]-(r-disk_r);
-            velocities[i] += glm::dvec2{ -w.y, w.x }*(v/glm::length(w));
+            velocities[i] +=  glm::dvec2{ 0, -v*0.2 };
         }
         positions[i] += 0.5;
         masses[i] = 0.01;
     }
 }
 
-std::vector<float> quadtree_lines(const QuadTree<std::span<const glm::dvec2>>& cells, int max_level=7) {
-    std::vector<float> lineVertices;
+std::vector<glm::vec2> quadtree_lines(const QuadTree<std::span<const glm::dvec2>>& cells, int max_level=7) {
+    std::vector<glm::vec2> lineVertices;
     for (auto& cell: cells.cells) {
         if (cell.level > max_level) continue;
-        float x = std::ldexp(cell.coords.x, -32);
-        float y = std::ldexp(cell.coords.y, -32);
+        glm::vec2 p = glm::ldexp(glm::dvec2(cell.coords), glm::ivec2{-32});
         float cell_size = std::ldexp(1.0, -static_cast<int>(cell.level));
         lineVertices.insert(lineVertices.end(), {
-            x, y, x + cell_size, y,
-            x + cell_size, y, x + cell_size, y + cell_size,
-            x + cell_size, y + cell_size, x, y + cell_size,
-            x, y + cell_size, x, y
-            });
+            p, p+glm::vec2{cell_size, 0},
+            p+glm::vec2{cell_size, 0}, p+cell_size,
+            p+cell_size, p+glm::vec2{0, cell_size},
+            p+glm::vec2{0, cell_size}, p
+        });
     }
     return lineVertices;
 }
@@ -234,10 +233,11 @@ struct Simulation {
 int main(void) {
     Simulation simulation;
 #ifndef NDEBUG
-    simulation.resize(1000);
+    constexpr auto SIM_SIZE = 1000;
 #else
-    simulation.resize(20000);
+    constexpr auto SIM_SIZE = 20000;
 #endif
+    simulation.resize(SIM_SIZE);
     make_two_stars(simulation.positions, simulation.velocities, simulation.masses, 0.3);
     simulation.init();
 
@@ -268,13 +268,28 @@ int main(void) {
                 step_once = true;
             }
             if (event.type == RGFW_keyPressed and event.key.value == RGFW_keyQ and not event.key.repeat) {
-                renderer.display_quad_tree = not renderer.display_quad_tree;
+                renderer.display_quadtree = not renderer.display_quadtree;
             }
             if (event.type == RGFW_keyPressed and event.key.value == RGFW_keyRight and not event.key.repeat) {
                 steps += 1;
             }
             if (event.type == RGFW_keyPressed and event.key.value == RGFW_keyLeft and not event.key.repeat) {
                 steps -= 1;
+            }
+            if (event.type == RGFW_keyPressed and event.key.value == RGFW_key1 and not event.key.repeat) {
+                simulation.resize(SIM_SIZE);
+                make_two_stars(simulation.positions, simulation.velocities, simulation.masses, 0.3);
+                simulation.init();
+            }
+            if (event.type == RGFW_keyPressed and event.key.value == RGFW_key2 and not event.key.repeat) {
+                simulation.resize(SIM_SIZE);
+                make_ring_and_planet(simulation.positions, simulation.velocities, simulation.masses, 0.4);
+                simulation.init();
+            }
+            if (event.type == RGFW_keyPressed and event.key.value == RGFW_key3 and not event.key.repeat) {
+                simulation.resize(SIM_SIZE);
+                make_disk(simulation.positions, simulation.velocities, simulation.masses, 0.4);
+                simulation.init();
             }
         }
 

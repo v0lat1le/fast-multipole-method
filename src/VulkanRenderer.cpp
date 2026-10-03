@@ -26,7 +26,7 @@ auto vkGetThings(F func, Args&&... args) {
 }
 
 struct Renderer {
-    bool display_quad_tree = false;
+    bool display_quadtree = false;
 
     RGFW_window* window;
     VkInstance instance;
@@ -127,7 +127,7 @@ struct Renderer {
             .synchronization2 = true,
             .dynamicRendering = true,
         };
-        auto extensions = std::to_array({ VK_KHR_SWAPCHAIN_EXTENSION_NAME });
+        auto extensions = std::to_array({ VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME });
         VkDeviceCreateInfo device_info{
             .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
             .pNext = &features13,
@@ -217,7 +217,9 @@ struct Renderer {
         }});
 
         auto dynamic_state = std::to_array<VkDynamicState>({
-            VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR,
+            VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY
         });
         VkPipelineDynamicStateCreateInfo dynamic_state_info {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
@@ -230,8 +232,7 @@ struct Renderer {
         };
 
         VkPipelineInputAssemblyStateCreateInfo input_assembly_info {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-            .topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO
         };
 
         VkPipelineViewportStateCreateInfo viewport_info {
@@ -244,7 +245,7 @@ struct Renderer {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
             .polygonMode = VK_POLYGON_MODE_FILL,
             .cullMode = VK_CULL_MODE_BACK_BIT,
-            .frontFace = VK_FRONT_FACE_CLOCKWISE,
+            .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
             .lineWidth = 1.0f,
         };
 
@@ -273,9 +274,9 @@ struct Renderer {
             .attachmentCount = 1,
             .pAttachments = &attach_state
         };
-        VkPushConstantRange push_constant_range{
+        VkPushConstantRange push_constant_range {
             .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-            .size = sizeof(VkDeviceAddress)
+            .size = 128
         };
 
         VkPipelineLayoutCreateInfo pipeline_layout_info {
@@ -334,7 +335,7 @@ struct Renderer {
         vkAllocateCommandBuffers(device, &command_buffer_info, command_buffers.data());
     }
 
-    void record_command_buffer(std::uint32_t image_index, std::size_t n_points, VkDeviceAddress shader_data) {
+    void record_command_buffer(std::uint32_t image_index, std::size_t n_points, std::size_t n_lines, VkDeviceAddress shader_data) {
         auto command_buffer = command_buffers[frame_index];
         VkCommandBufferBeginInfo begin_buffer_info { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
         vkBeginCommandBuffer(command_buffer, &begin_buffer_info);
@@ -371,11 +372,24 @@ struct Renderer {
 
         vkCmdBeginRendering(command_buffer, &rendering_info);
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &shader_data);
         VkViewport viewport{0.0f, 0.0f, swapchain_extent.width, swapchain_extent.height, 0.0f, 1.0f};
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
         VkRect2D scissor{{0,0}, swapchain_extent };
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+        if (n_lines) {
+            VkDeviceAddress lines_data = shader_data+n_points*sizeof(glm::vec2);
+            vkCmdSetPrimitiveTopology(command_buffer, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
+            vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &lines_data);
+            float lines_color[3] = {0.0, 0.0, 0.6};
+            vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 16, 3*sizeof(float), lines_color);
+            vkCmdDraw(command_buffer, n_lines, 1, 0, 0);
+        }
+
+        vkCmdSetPrimitiveTopology(command_buffer, VK_PRIMITIVE_TOPOLOGY_POINT_LIST);
+        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &shader_data);
+        float points_color[3] = { 1.0f, 1.0f, 1.0f };
+        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 16, 3*sizeof(float), points_color);
         vkCmdDraw(command_buffer, n_points, 1, 0, 0);
         vkCmdEndRendering(command_buffer);
 
@@ -547,9 +561,17 @@ struct Renderer {
             return;
         }
 
-        void* frame_working_mem = working_memory.cpu + frame_index*16*1024*1024;
+        std::byte* frame_working_mem = working_memory.cpu + frame_index*16*1024*1024;
         for (std::size_t i=0; i<simulation.positions.size(); ++i) {
             reinterpret_cast<glm::vec2*>(frame_working_mem)[i] = simulation.positions[i];
+        }
+        std::size_t n_lines = 0;
+        if (display_quadtree) {
+            std::vector<glm::vec2> lineVertices = quadtree_lines(simulation.quadtree);
+            for (std::size_t i=0; i<lineVertices.size(); ++i) {
+                reinterpret_cast<glm::vec2*>(frame_working_mem)[simulation.positions.size()+i] = lineVertices[i];
+            }
+            n_lines = lineVertices.size()/2;
         }
 
         vkWaitForFences(device, 1, in_flight_fences.data()+frame_index, true, UINT64_MAX);
@@ -567,7 +589,7 @@ struct Renderer {
 
         vkResetFences(device, 1, in_flight_fences.data()+frame_index);
         vkResetCommandBuffer(command_buffers[frame_index], 0);
-        record_command_buffer(image_index, simulation.positions.size(), working_memory.gpu + frame_index*16*1024*1024);
+        record_command_buffer(image_index, simulation.positions.size(), n_lines, working_memory.gpu + frame_index*16*1024*1024);
         VkPipelineStageFlags wait_dst_stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         VkSubmitInfo submitInfo {
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,

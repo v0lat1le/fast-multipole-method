@@ -1,6 +1,6 @@
 struct Renderer {
 	RGFW_window* window;
-    bool display_quad_tree = false;
+    bool display_quadtree = false;
     unsigned int pointsArrayObject, pointsBufferObject, quadTreeArrayObject, quadTreeBufferObject;
     unsigned int shaderProgram;
     int colorUniformLocation;
@@ -70,15 +70,15 @@ struct Renderer {
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        if (display_quad_tree) {
-            std::vector<float> lineVertices = quadtree_lines(simulation.quadtree);
+        if (display_quadtree) {
+            std::vector<glm::vec2> lineVertices = quadtree_lines(simulation.quadtree);
             glBindVertexArray(quadTreeArrayObject);
             glBindBuffer(GL_ARRAY_BUFFER, quadTreeBufferObject);
-            glBufferData(GL_ARRAY_BUFFER, lineVertices.size() * sizeof(float), lineVertices.data(), GL_DYNAMIC_DRAW);
+            glBufferData(GL_ARRAY_BUFFER, lineVertices.size() * sizeof(glm::vec2), lineVertices.data(), GL_DYNAMIC_DRAW);
             glLineWidth(1.0f);
             glUseProgram(shaderProgram);
             glUniform4f(colorUniformLocation, 0.0f, 0.0f, 0.6f, 1.0f);
-            glDrawArrays(GL_LINES, 0, lineVertices.size()/2);
+            glDrawArrays(GL_LINES, 0, lineVertices.size());
         }
 
         glBindVertexArray(pointsArrayObject);

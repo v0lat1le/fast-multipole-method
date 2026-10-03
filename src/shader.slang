@@ -1,5 +1,6 @@
 struct VertexInput {
-	float2 pos;
+	float2* pos;
+	float3 color;
 };
 
 struct VertexOutput {
@@ -9,10 +10,10 @@ struct VertexOutput {
 };
 
 [shader("vertex")]
-VertexOutput vertMain(uint vertex_index : SV_VertexID, uniform VertexInput* data) {
+VertexOutput vertMain(uint vertex_index : SV_VertexID, uniform VertexInput data) {
     VertexOutput output;
-    output.sv_position = float4(data[vertex_index].pos*2.0-1.0, 0.0, 1.0);
-    output.color = float3(1.0, 1.0, 1.0);
+    output.sv_position = float4(data.pos[vertex_index]*2.0-1.0, 0.0, 1.0);
+    output.color = data.color;
 	output.pointSize = 1.2;
     return output;
 }
