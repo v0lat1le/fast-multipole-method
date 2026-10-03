@@ -5,7 +5,7 @@
 - [ ] split into libs
 - [ ] QuadTree tests
 - [ ] finish TODOs of O(n) impl
-- [ ] merge particles
-- [ ] particle render size based on mass
+- [ ] display field potential
+- [ ] save SVG
 
 ### In Progress

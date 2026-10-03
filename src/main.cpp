@@ -2,7 +2,6 @@
 #include <cmath>
 #include <random>
 #include <ranges>
-#include <memory>
 
 #ifdef FMM_RENDERER_VULKAN
 #define RGFW_VULKAN
@@ -112,7 +111,8 @@ void make_disk(std::span<glm::dvec2> positions, std::span<glm::dvec2> velocities
 }
 
 void make_two_stars(std::span<glm::dvec2> positions, std::span<glm::dvec2> velocities, std::span<double> masses, double r=0.5) {
-    auto M = 0.01*positions.size()*0.5;
+    auto m = 0.01;
+    auto M = m*positions.size()*0.5;
     auto v = std::sqrt(M);
     auto disk_r = 0.1*r;
 
@@ -123,15 +123,13 @@ void make_two_stars(std::span<glm::dvec2> positions, std::span<glm::dvec2> veloc
         velocities[i] = glm::dvec2{ -pos.y, pos.x }*(v/disk_r);
         if (i%2) {
             positions[i] += glm::dvec2{ r-disk_r, 0.0 };
-            auto w = positions[i]+(r-disk_r);
             velocities[i] += glm::dvec2{ 0, v*0.2 };
         } else {
             positions[i] -= glm::dvec2{ r-disk_r, 0.0 };
-            auto w = positions[i]-(r-disk_r);
-            velocities[i] +=  glm::dvec2{ 0, -v*0.2 };
+            velocities[i] -=  glm::dvec2{ 0, v*0.2 };
         }
         positions[i] += 0.5;
-        masses[i] = 0.01;
+        masses[i] = m;
     }
 }
 

@@ -377,19 +377,26 @@ struct Renderer {
         VkRect2D scissor{{0,0}, swapchain_extent };
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
+        int mode = 0;
         if (n_lines) {
-            VkDeviceAddress lines_data = shader_data+n_points*sizeof(glm::vec2);
+            VkDeviceAddress lines_data = shader_data+n_points*sizeof(glm::vec2)+n_points*sizeof(float);
             vkCmdSetPrimitiveTopology(command_buffer, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
             vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &lines_data);
             float lines_color[3] = {0.0, 0.0, 0.6};
             vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 16, 3*sizeof(float), lines_color);
+            mode = 1;
+            vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 16+3*sizeof(float), sizeof(int), &mode);
             vkCmdDraw(command_buffer, n_lines, 1, 0, 0);
         }
 
         vkCmdSetPrimitiveTopology(command_buffer, VK_PRIMITIVE_TOPOLOGY_POINT_LIST);
         vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &shader_data);
+        VkDeviceAddress mass_data = shader_data+n_points*sizeof(glm::vec2);
+        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(VkDeviceAddress), sizeof(VkDeviceAddress), &mass_data);
         float points_color[3] = { 1.0f, 1.0f, 1.0f };
         vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 16, 3*sizeof(float), points_color);
+        mode = 0;
+        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 16+3*sizeof(float), sizeof(int), &mode);
         vkCmdDraw(command_buffer, n_points, 1, 0, 0);
         vkCmdEndRendering(command_buffer);
 
@@ -565,13 +572,19 @@ struct Renderer {
         for (std::size_t i=0; i<simulation.positions.size(); ++i) {
             reinterpret_cast<glm::vec2*>(frame_working_mem)[i] = simulation.positions[i];
         }
+        frame_working_mem += simulation.positions.size()*sizeof(glm::vec2);
+        for (std::size_t i=0; i<simulation.masses.size(); ++i) {
+            reinterpret_cast<float*>(frame_working_mem)[i] = simulation.masses[i];
+        }
+        frame_working_mem += simulation.masses.size()*sizeof(float);
         std::size_t n_lines = 0;
         if (display_quadtree) {
             std::vector<glm::vec2> lineVertices = quadtree_lines(simulation.quadtree);
             for (std::size_t i=0; i<lineVertices.size(); ++i) {
-                reinterpret_cast<glm::vec2*>(frame_working_mem)[simulation.positions.size()+i] = lineVertices[i];
+                reinterpret_cast<glm::vec2*>(frame_working_mem)[i] = lineVertices[i];
             }
             n_lines = lineVertices.size()/2;
+            frame_working_mem += lineVertices.size()*sizeof(glm::vec2);
         }
 
         vkWaitForFences(device, 1, in_flight_fences.data()+frame_index, true, UINT64_MAX);
