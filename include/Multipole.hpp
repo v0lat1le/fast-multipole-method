@@ -66,6 +66,7 @@ constexpr glm::dvec2 evaluate_local(const Local<P>& local, glm::dvec2 dr) noexce
 template <std::size_t P>
 struct Binomial {
     std::array<double, P*(P+1)/2> coefficients;
+
     constexpr Binomial() noexcept {
         coefficients[0] = 1.0;
         for (int n=1; n<P; ++n) {
@@ -107,12 +108,15 @@ constexpr Local<P> convert_to_local(const Multipole<P>& multipole, glm::dvec2 dr
     for (int k=1; k<P; ++k) {
         z_power[k] = z_power[k-1]*z_power[0];
     }
-    Local<P> result = {}; // not computing b0 as it doesn't contribute to the force;
-    for (int k=0; k<P; ++k) {
+    Local<P> result = {};  // not computing or storing b0 as it doesn't contribute to the force
+    for (int k=0; k<P; k+=2) {
         auto v0 = multipole.a[k]*z_power[k];
-        if ((k&1) == 0) {
-            v0 = -v0;
+        for (int l=0; l<P; ++l) {
+            result[l] -= v0*binoms(l+1+k, k);
         }
+    }
+    for (int k=1; k<P; k+=2) {
+        auto v0 = multipole.a[k]*z_power[k];
         for (int l=0; l<P; ++l) {
             result[l] += v0*binoms(l+1+k, k);
         }
@@ -133,7 +137,7 @@ constexpr Local<P> translate_local(const Local<P>& local, glm::dvec2 dr) noexcep
             result[k] -= z0*result[k+1];
         }
     }
-    for (int k=0; k<P-1; ++k) { // one extra round as we dropped b0
+    for (int k=0; k<P-1; ++k) {  // one extra round as we're not storing b0
         result[k] -= z0*result[k+1];
     }
     return result;
