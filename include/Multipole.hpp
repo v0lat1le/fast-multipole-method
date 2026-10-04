@@ -121,21 +121,35 @@ struct M2L {
 template <std::size_t P>
 constexpr Local<P> convert_to_local(const Multipole<P>& multipole, glm::dvec2 dr) noexcept {
     static constexpr auto coefficients = M2L<P>();
-    auto z0 = std::complex<double>(dr.x, dr.y);
-    std::array<std::complex<double>, P> z_power = { 1.0/z0 };
+    double d = glm::dot(dr, dr);
+    double inv_real = dr.x/d;
+    double inv_imag = -dr.y/d;
+    double z_power_real[P] = { inv_real };
+    double z_power_imag[P] = { inv_imag };
     for (int k=1; k<P; ++k) {
-        z_power[k] = z_power[k-1]*z_power[0];
+        z_power_real[k] = z_power_real[k-1]*inv_real - z_power_imag[k-1]*inv_imag;
+        z_power_imag[k] = z_power_real[k-1]*inv_imag + z_power_imag[k-1]*inv_real;
     }
-    Local<P> result = {};  // not computing or storing b0 as it doesn't contribute to the force
+    // not computing or storing b0 as it doesn't contribute to the force
+    double bs_real[P] = {};
+    double bs_imag[P] = {};
     for (int k=0; k<P; ++k) {
-        auto v0 = multipole.a[k]*z_power[k];
+        double a_real = multipole.a[k].real();
+        double a_imag = multipole.a[k].imag();
+        double az_real = a_real*z_power_real[k] - a_imag*z_power_imag[k];
+        double az_imag = a_real*z_power_imag[k] + a_imag*z_power_real[k];
         for (int l=0; l<P; ++l) {
-            result[l] += v0*coefficients(k, l);
+            bs_real[l] += az_real*coefficients(k, l);
+            bs_imag[l] += az_imag*coefficients(k, l);
         }
     }
+    Local<P> result{};
     for (int l=0; l<P; ++l) {
-        result[l] -= multipole.q/(l+1.0);
-        result[l] *= z_power[l];
+        double f_real = bs_real[l] - multipole.q/(l+1.0);
+        double f_imag = bs_imag[l];
+        auto& o = reinterpret_cast<double(&)[2]>(result[l]);
+        o[0] += f_real*z_power_real[l] - f_imag*z_power_imag[l];
+        o[1] += f_real*z_power_imag[l] + f_imag*z_power_real[l];
     }
     return result;
 }
