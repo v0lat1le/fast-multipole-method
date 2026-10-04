@@ -103,15 +103,12 @@ void compute_acceleration_multipole(glm::dvec2 src_pos, const Multipole<P>& mult
     }
 }
 
-
 template<std::size_t P>
 void update_local(Local<P>& dst, const Local<P>& src) {
     for (int i=0; i<P; ++i) {
         dst[i] += src[i];
     }
 }
-
-
 
 void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps) {
     std::vector<std::uint32_t> neighbour_storage;

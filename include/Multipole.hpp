@@ -38,14 +38,23 @@ constexpr Multipole<P> calculate_multipole(double charge, glm::dvec2 dr) noexcep
 
 template <std::size_t P>
 constexpr glm::dvec2 evaluate_multipole(const Multipole<P>& multipole, glm::dvec2 dr) noexcept {
-    auto z_inv = 1.0/std::complex<double>(dr.x, dr.y);
-    auto accel = multipole.q*z_inv;
-    auto z_power = z_inv;
+    double d = dr.x*dr.x + dr.y*dr.y;
+    double inv_real = dr.x/d;
+    double inv_imag = -dr.y/d;
+    double accel_real = multipole.q*inv_real;
+    double accel_imag = multipole.q*inv_imag;
+    double z_power_real = inv_real;
+    double z_power_imag = inv_imag;
     for (int k=0; k<P; ++k) {
-        z_power *= z_inv;
-        accel -= (k+1.0)*multipole.a[k]*z_power;
+        double z_power_real_next = z_power_real*inv_real - z_power_imag*inv_imag;
+        z_power_imag = z_power_real*inv_imag + z_power_imag*inv_real;
+        z_power_real = z_power_real_next;
+        double a_real = multipole.a[k].real();
+        double a_imag = multipole.a[k].imag();
+        accel_real -= (k+1.0)*(a_real*z_power_real - a_imag*z_power_imag);
+        accel_imag -= (k+1.0)*(a_real*z_power_imag + a_imag*z_power_real);
     }
-    return glm::dvec2{-accel.real(), accel.imag()};
+    return glm::dvec2{-accel_real, accel_imag };
 }
 
 template <std::size_t P>
