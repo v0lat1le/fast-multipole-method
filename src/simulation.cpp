@@ -47,24 +47,26 @@ QuadTree<std::span<const glm::dvec2>> build_quadtree(std::span<const glm::dvec2>
     return quadtree;
 }
 
-void compute_acceleration_direct(std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations) {
+void compute_acceleration_direct(std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double eps) {
     for (std::size_t i=0; i<positions.size(); i++) {
         for (std::size_t j=i+1; j<positions.size(); j++) {
             auto dr = positions[j] - positions[i];
-            auto d2 = glm::dot(dr, dr);
+            auto d2 = glm::dot(dr, dr) + eps;
             accelerations[i] += dr*masses[j]/d2;
             accelerations[j] -= dr*masses[i]/d2;
         }
     }
 }
 
-void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc) {
-    for (std::size_t i=0; i<src_pos.size(); i++) {
-        for (std::size_t j=0; j<dst_pos.size(); j++) {
+void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc, double eps) {
+    for (std::size_t j=0; j<dst_pos.size(); j++) {
+        glm::dvec2 acc{};
+        for (std::size_t i=0; i<src_pos.size(); i++) {
             auto dr = dst_pos[j] - src_pos[i];
-            auto d2 = glm::dot(dr, dr);
-            dst_acc[j] -= dr*src_mass[i]/d2;
+            auto d2 = glm::dot(dr, dr) + eps;
+            acc -= dr*(src_mass[i]/d2);
         }
+        dst_acc[j] += acc;
     }
 }
 
@@ -109,7 +111,7 @@ void update_local(Local<P>& dst, const Local<P>& src) {
 
 
 
-void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations) {
+void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps) {
     std::vector<std::uint32_t> neighbour_storage;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> neighbours;
     std::array<std::vector<std::tuple<int, int, glm::dvec2>>, 6> queues;
@@ -124,7 +126,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
         neighbours.emplace_back(neighbour_storage.size(), 0);
         if (cell.children_count == 0) {
             std::ptrdiff_t src_offset = cell.value.data() - positions.data();
-            compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), accelerations.subspan(src_offset, cell.value.size()));
+            compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), accelerations.subspan(src_offset, cell.value.size()), direct_eps);
         }
         for (std::uint32_t sibling_idx=parent.children; sibling_idx<parent.children+parent.children_count; ++sibling_idx) {
             if (sibling_idx != cell_idx) {
@@ -135,7 +137,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
                     std::ptrdiff_t src_offset = cell.value.data() - positions.data();
                     std::ptrdiff_t dst_offset = sibling.value.data() - positions.data();
                     // TODO: local expansion from each particle to non-adjacent children, otherwise direct
-                    compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), sibling.value, accelerations.subspan(dst_offset, sibling.value.size()));
+                    compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), sibling.value, accelerations.subspan(dst_offset, sibling.value.size()), direct_eps);
                 }
             }
         }
@@ -149,7 +151,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
                     if (cell.children_count == 0) {
                         std::ptrdiff_t src_offset = cell.value.data() - positions.data();
                         std::ptrdiff_t dst_offset = parent_neighbour.value.data() - positions.data();
-                        compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), parent_neighbour.value, accelerations.subspan(dst_offset, parent_neighbour.value.size()));
+                        compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), parent_neighbour.value, accelerations.subspan(dst_offset, parent_neighbour.value.size()), direct_eps);
                     }
                 } else {
                     auto child_mask = 1u << (31-cell.level);
@@ -168,7 +170,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
                             std::ptrdiff_t src_offset = cell.value.data() - positions.data();
                             std::ptrdiff_t dst_offset = cousin.value.data() - positions.data();
                             // TODO: local expansion from each particle to non-adjacent children, otherwise direct
-                            compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), cousin.value, accelerations.subspan(dst_offset, cousin.value.size()));
+                            compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), cousin.value, accelerations.subspan(dst_offset, cousin.value.size()), direct_eps);
                         }
                     } else {
                         assert(cell.level == cousin.level);

@@ -189,11 +189,11 @@ struct Simulation {
         //    return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
         //});
 
-        quadtree = build_quadtree(positions, 12);
+        quadtree = build_quadtree(positions, 20);
     }
 
     void update(double dt) {
-        compute_acceleration_multipoles(quadtree, positions, masses, accelerations);
+        compute_acceleration_multipoles(quadtree, positions, masses, accelerations, 1e-9);
         std::size_t bad = 0;
         for (std::size_t i=positions.size(); i-->0;) {
             velocities[i] += accelerations[i]*dt;

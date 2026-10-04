@@ -121,7 +121,7 @@ struct M2L {
 template <std::size_t P>
 constexpr Local<P> convert_to_local(const Multipole<P>& multipole, glm::dvec2 dr) noexcept {
     static constexpr auto coefficients = M2L<P>();
-    double d = glm::dot(dr, dr);
+    double d = dr.x*dr.x + dr.y*dr.y;
     double inv_real = dr.x/d;
     double inv_imag = -dr.y/d;
     double z_power_real[P] = { inv_real };

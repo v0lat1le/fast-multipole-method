@@ -47,7 +47,7 @@ constexpr bool cmp_zcurve_bitmagic(const glm::vec<2, T, glm::defaultp>& lhs, con
 
 QuadTree<std::span<const glm::dvec2>> build_quadtree(std::span<const glm::dvec2> points, int max_points=1, int max_levels=31);
 
-void compute_acceleration_direct(std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations);
-void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc);
+void compute_acceleration_direct(std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double eps=0.0);
+void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc, double eps=0.0);
 
-void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& cells, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations);
+void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& cells, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps=0.0);
