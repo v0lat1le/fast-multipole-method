@@ -11,7 +11,7 @@
 #include "simulation.hpp"
 
 
-QuadTree<std::span<const glm::dvec2>> build_quadtree(std::span<const glm::dvec2> points, int max_levels, int max_points) {
+QuadTree<std::span<const glm::dvec2>> build_quadtree(std::span<const glm::dvec2> points, int max_points, int max_levels) {
     QuadTree<std::span<const glm::dvec2>> quadtree(points);
     quadtree.cells.reserve(points.size()/max_points);
 
@@ -34,13 +34,13 @@ QuadTree<std::span<const glm::dvec2>> build_quadtree(std::span<const glm::dvec2>
             auto double_space_coords = glm::ldexp(glm::dvec2{child_cell_coords}, glm::ivec2{-32});
             auto end = std::lower_bound(begin, parent.value.end(), double_space_coords, static_cast<bool(*)(const glm::dvec2&, const glm::dvec2&)>(cmp_zcurve_bitmagic));
             if (begin != end) {
-                quadtree.add_cell({ begin, end }, prev_child_cell_coords, parent);
+                quadtree.add_cell({ begin, end }, prev_child_cell_coords, idx);
                 begin = end;
             }
             prev_child_cell_coords = child_cell_coords;
         }
         if (begin != parent.value.end()) {
-            quadtree.add_cell({ begin, parent.value.end() }, prev_child_cell_coords, parent);
+            quadtree.add_cell({ begin, parent.value.end() }, prev_child_cell_coords, idx);
         }
     }
 
@@ -107,63 +107,77 @@ void update_local(Local<P>& dst, const Local<P>& src) {
     }
 }
 
+
+
 void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations) {
-    auto multipoles = compute_multipoles<20>(quadtree, positions, masses);
-    auto locals = std::vector<Local<20>>(quadtree.cells.size());
+    std::vector<std::uint32_t> neighbour_storage;
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> neighbours;
+    std::array<std::vector<std::tuple<int, int, glm::dvec2>>, 6> queues;
+    
+    auto multipoles = compute_multipoles<12>(quadtree, positions, masses);
+    auto locals = std::vector<Local<12>>(quadtree.cells.size());
 
-    std::array<std::vector<std::tuple<int, int, glm::dvec2>>, 4> queues;
-
-    for (std::size_t idx=1; idx<quadtree.cells.size(); ++idx) {
-        auto& cell = quadtree.cells[idx];
-
-        auto child_mask = 1u << (31-cell.level);
-        auto cell_center = glm::ldexp(glm::dvec2{cell.coords | child_mask}, glm::ivec2{-32});
-
+    neighbours.emplace_back(0, 0);
+    for (std::uint32_t cell_idx=1; cell_idx<quadtree.cells.size(); ++cell_idx) {
+        auto& cell = quadtree.cells[cell_idx];
+        auto& parent = quadtree.cells[cell.parent];
+        neighbours.emplace_back(neighbour_storage.size(), 0);
         if (cell.children_count == 0) {
             std::ptrdiff_t src_offset = cell.value.data() - positions.data();
             compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), accelerations.subspan(src_offset, cell.value.size()));
-
-            for (auto& sibling: quadtree.siblings(cell)) {
-                std::ptrdiff_t dst_offset = sibling->value.data() - positions.data();
-                // TODO: local expansion from each particle to non-adjacent children, otherwise direct
-                compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), sibling->value, accelerations.subspan(dst_offset, sibling->value.size()));
+        }
+        for (std::uint32_t sibling_idx=parent.children; sibling_idx<parent.children+parent.children_count; ++sibling_idx) {
+            if (sibling_idx != cell_idx) {
+                neighbour_storage.push_back(sibling_idx);
+                neighbours.back().second++;
+                if (cell.children_count == 0) {
+                    auto& sibling = quadtree.cells[sibling_idx];
+                    std::ptrdiff_t src_offset = cell.value.data() - positions.data();
+                    std::ptrdiff_t dst_offset = sibling.value.data() - positions.data();
+                    // TODO: local expansion from each particle to non-adjacent children, otherwise direct
+                    compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), sibling.value, accelerations.subspan(dst_offset, sibling.value.size()));
+                }
             }
         }
-
-        for (auto& parent_neighbour: quadtree.neighbours(quadtree.parent(cell))) {
-            if (parent_neighbour->level+1 != cell.level && parent_neighbour->children_count != 0) {
-                continue;
-            }
-            if (not quadtree.is_adjacent(cell.level, cell.coords, parent_neighbour->level, parent_neighbour->coords)) {
-                if (parent_neighbour->children_count != 0) {  // not adjacent and parent_neighbour->level+1 == cell.level
-                    for (auto& cousin: quadtree.children(*parent_neighbour)) {
-                        auto cousin_cell_center = glm::ldexp(glm::dvec2{cousin.coords | child_mask}, glm::ivec2{-32});
-                        auto local_idx = &cousin-quadtree.cells.data();
-                        queues[local_idx%queues.size()].push_back({ local_idx , idx, cell_center-cousin_cell_center });
-                    }
-                } else {  // not adjacent and no children (but can be larger)
-                    std::ptrdiff_t dst_offset = parent_neighbour->value.data() - positions.data();
-                    compute_acceleration_multipole(cell_center, multipoles[idx], parent_neighbour->value, accelerations.subspan(dst_offset, parent_neighbour->value.size()));
-                }
-            } else if (parent_neighbour->children_count != 0) {  // is adjacent and parent_neighbour->level+1 == cell.level
-                for (auto& cousin: quadtree.children(*parent_neighbour)) {
-                    if (not quadtree.is_adjacent(cell.level, cell.coords, cousin.level, cousin.coords)) {
-                        auto cousin_cell_center = glm::ldexp(glm::dvec2{ cousin.coords | child_mask }, glm::ivec2{ -32 });
-                        auto local_idx = &cousin-quadtree.cells.data();
-                        queues[local_idx%queues.size()].push_back({ local_idx , idx, cell_center-cousin_cell_center });
-                    } else if (cell.children_count == 0) {
-                        std::ptrdiff_t dst_offset = cousin.value.data() - positions.data();
+        auto [offset, count] = neighbours[cell.parent];
+        for (std::uint32_t parent_neighbour_idx=offset; parent_neighbour_idx < offset+count; ++parent_neighbour_idx) {
+            auto& parent_neighbour = quadtree.cells[neighbour_storage[parent_neighbour_idx]];
+            if (parent_neighbour.children_count == 0) {
+                if (quadtree.is_adjacent(cell.level, cell.coords, parent_neighbour.level, parent_neighbour.coords)) {
+                    neighbour_storage.push_back(neighbour_storage[parent_neighbour_idx]);
+                    neighbours.back().second++;
+                    if (cell.children_count == 0) {
                         std::ptrdiff_t src_offset = cell.value.data() - positions.data();
-                        // TODO: local expansion from each particle to non-adjacent children, otherwise direct
-                        compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()),
-                            cousin.value, accelerations.subspan(dst_offset, cousin.value.size()));
+                        std::ptrdiff_t dst_offset = parent_neighbour.value.data() - positions.data();
+                        compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), parent_neighbour.value, accelerations.subspan(dst_offset, parent_neighbour.value.size()));
+                    }
+                } else {
+                    auto child_mask = 1u << (31-cell.level);
+                    auto cell_center = glm::ldexp(glm::dvec2{ cell.coords | child_mask }, glm::ivec2{ -32 });
+                    std::ptrdiff_t dst_offset = parent_neighbour.value.data() - positions.data();
+                    compute_acceleration_multipole(cell_center, multipoles[cell_idx], parent_neighbour.value, accelerations.subspan(dst_offset, parent_neighbour.value.size()));
+                }
+            } else {
+                for (std::uint32_t cousin_idx=parent_neighbour.children; cousin_idx<parent_neighbour.children+parent_neighbour.children_count; ++cousin_idx) {
+                    auto& cousin = quadtree.cells[cousin_idx];
+                    if (quadtree.is_adjacent(cell.level, cell.coords, cousin.level, cousin.coords)) {
+                        assert(cousin.children_count == 0 || cell.level == cousin.level);
+                        neighbour_storage.push_back(cousin_idx);
+                        neighbours.back().second++;
+                        if (cell.children_count == 0) {
+                            std::ptrdiff_t src_offset = cell.value.data() - positions.data();
+                            std::ptrdiff_t dst_offset = cousin.value.data() - positions.data();
+                            // TODO: local expansion from each particle to non-adjacent children, otherwise direct
+                            compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()), cousin.value, accelerations.subspan(dst_offset, cousin.value.size()));
+                        }
+                    } else {
+                        assert(cell.level == cousin.level);
+                        auto child_mask = 1u << (31-cell.level);
+                        auto cell_center = glm::ldexp(glm::dvec2{ cell.coords | child_mask }, glm::ivec2{ -32 });
+                        auto cousin_cell_center = glm::ldexp(glm::dvec2{ cousin.coords | child_mask }, glm::ivec2{ -32 });
+                        queues[cousin_idx%queues.size()].push_back({ cousin_idx , cell_idx, cell_center-cousin_cell_center });
                     }
                 }
-            } else if (cell.children_count == 0) {  // is adjacent and parent_neighbour->children_count == 0
-                std::ptrdiff_t dst_offset = parent_neighbour->value.data() - positions.data();
-                std::ptrdiff_t src_offset = cell.value.data() - positions.data();
-                compute_acceleration_direct(cell.value, masses.subspan(src_offset, cell.value.size()),
-                    parent_neighbour->value, accelerations.subspan(dst_offset, parent_neighbour->value.size()));
             }
         }
     }

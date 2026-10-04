@@ -44,7 +44,7 @@ TEST_CASE(test_cmp_zcurve_points) {
 
 void check_quadtree(std::vector<glm::dvec2>& points) {
     std::sort(points.begin(), points.end(), static_cast<bool(*)(const glm::dvec2&, const glm::dvec2&)>(cmp_zcurve_bitmagic));
-    auto quadtree = build_quadtree(points, 31, 1);
+    auto quadtree = build_quadtree(points);
     for (auto& cell: quadtree.cells) {
         double x = std::ldexp(cell.coords.x, -32);
         double y = std::ldexp(cell.coords.y, -32);
@@ -100,7 +100,7 @@ void run_test(std::vector<glm::dvec2> positions, std::vector<double> masses) {
     std::sort(positions.begin(), positions.end(), static_cast<bool(*)(const glm::dvec2&, const glm::dvec2&)>(cmp_zcurve_bitmagic));
     compute_acceleration_direct(positions, masses, accelerations_exepected);
 
-    auto cells = build_quadtree(positions, 31, 1);
+    auto cells = build_quadtree(positions);
     compute_acceleration_multipoles(cells, positions, masses, accelerations);
     for (int i=0; i<accelerations.size(); ++i) {
         assert(equal_approx(accelerations[i], accelerations_exepected[i], 1e-2));

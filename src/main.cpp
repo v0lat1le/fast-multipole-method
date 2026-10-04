@@ -189,7 +189,7 @@ struct Simulation {
         //    return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
         //});
 
-        quadtree = build_quadtree(positions, 31, 20);
+        quadtree = build_quadtree(positions, 12);
     }
 
     void update(double dt) {
