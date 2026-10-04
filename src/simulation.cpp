@@ -13,10 +13,12 @@
 
 QuadTree<std::span<const glm::dvec2>> build_quadtree(std::span<const glm::dvec2> points, int max_points, int max_levels) {
     QuadTree<std::span<const glm::dvec2>> quadtree(points);
-    quadtree.cells.reserve(points.size()/max_points);
+    quadtree.cells.reserve(2*points.size()/max_points);
 
     for (std::size_t idx = 0; idx < quadtree.cells.size(); ++idx) {
-        quadtree.cells.reserve(quadtree.cells.size()+4);  // avoid reallocation when adding items in the loop
+        if (quadtree.cells.capacity() < quadtree.cells.size()+4) {  // avoid reallocation when adding items in the loop
+            quadtree.cells.reserve(quadtree.cells.capacity()*1.5+4);
+        }
         auto& parent = quadtree.cells[idx];
         if (parent.value.size() <= max_points || parent.level == max_levels) {
             continue;
