@@ -101,24 +101,36 @@ constexpr Multipole<P> translate_multipole(const Multipole<P>& multipole, glm::d
 }
 
 template <std::size_t P>
+struct M2L {
+    double coefficients[P][P];
+
+    constexpr M2L() {
+        Binomial<2*P> binoms;
+        for (int k=0; k<P; ++k) {
+            for (int l=0; l<P; ++l) {
+                coefficients[k][l] = ((k&1) ? 1.0 : -1.0)*binoms(l+1+k, k);
+            }
+        }
+    }
+
+    constexpr double operator()(int k, int l) const noexcept {
+        return coefficients[k][l];
+    }
+};
+
+template <std::size_t P>
 constexpr Local<P> convert_to_local(const Multipole<P>& multipole, glm::dvec2 dr) noexcept {
-    static constexpr auto binoms = Binomial<2*P>();
+    static constexpr auto coefficients = M2L<P>();
     auto z0 = std::complex<double>(dr.x, dr.y);
     std::array<std::complex<double>, P> z_power = { 1.0/z0 };
     for (int k=1; k<P; ++k) {
         z_power[k] = z_power[k-1]*z_power[0];
     }
     Local<P> result = {};  // not computing or storing b0 as it doesn't contribute to the force
-    for (int k=0; k<P; k+=2) {
+    for (int k=0; k<P; ++k) {
         auto v0 = multipole.a[k]*z_power[k];
         for (int l=0; l<P; ++l) {
-            result[l] -= v0*binoms(l+1+k, k);
-        }
-    }
-    for (int k=1; k<P; k+=2) {
-        auto v0 = multipole.a[k]*z_power[k];
-        for (int l=0; l<P; ++l) {
-            result[l] += v0*binoms(l+1+k, k);
+            result[l] += v0*coefficients(k, l);
         }
     }
     for (int l=0; l<P; ++l) {
