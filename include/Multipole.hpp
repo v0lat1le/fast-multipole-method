@@ -25,15 +25,20 @@ struct Multipole {
 };
 
 template <std::size_t P>
-constexpr Multipole<P> calculate_multipole(double charge, glm::dvec2 dr) noexcept {
-    Multipole<P> result = {charge};
-    auto z = std::complex<double>(dr.x, dr.y);
-    auto z_power = std::complex<double>(charge);
+constexpr void calculate_multipole(double charge, Multipole<P>& dst, glm::dvec2 dr) noexcept {
+    double z_real = dr.x;
+    double z_imag = dr.y;
+    double z_power_real = charge;
+    double z_power_imag = 0.0;
     for (int k=0; k<P; ++k) {
-        z_power *= z;
-        result.a[k] -= z_power/(k+1.0);
+        double z_power_real_next = z_power_real*z_real - z_power_imag*z_imag;
+        z_power_imag = z_power_real*z_imag + z_power_imag*z_real;
+        z_power_real = z_power_real_next;
+        auto& o = reinterpret_cast<double(&)[2]>(dst.a[k]);
+        o[0] -= z_power_real/(k+1.0);
+        o[1] -= z_power_imag/(k+1.0);
     }
-    return result;
+    dst.q += charge;
 }
 
 template <std::size_t P>
@@ -62,14 +67,20 @@ using Local = std::array<std::complex<double>, P>;
 
 template <std::size_t P>
 constexpr glm::dvec2 evaluate_local(const Local<P>& local, glm::dvec2 dr) noexcept {
-    auto z = std::complex<double>(dr.x, dr.y);
-    auto z_power = std::complex<double>(1.0);
-    auto accel = std::complex<double>();
-    for (int l=0; l<P; ++l) {
-        accel += (l+1.0)*local[l]*z_power;
-        z_power *= z;  // TODO: uneccesary mul on last iter
+    double z_real = dr.x;
+    double z_imag = dr.y;
+    double z_power_real = z_real;
+    double z_power_imag = z_imag;
+    auto accel_real = local[0].real();
+    auto accel_imag = local[0].imag();
+    for (int l=1; l<P; ++l) {
+        accel_real += (l+1.0)*(local[l].real()*z_power_real - local[l].imag()*z_power_imag);
+        accel_imag += (l+1.0)*(local[l].real()*z_power_imag + local[l].imag()*z_power_real);
+        double z_power_real_next = z_power_real*z_real - z_power_imag*z_imag;  // TODO: uneccesary mul on last iter
+        z_power_imag = z_power_real*z_imag + z_power_imag*z_real;
+        z_power_real = z_power_real_next;
     }
-    return glm::dvec2{-accel.real(), accel.imag()};
+    return glm::dvec2{-accel_real, accel_imag};
 }
 
 template <std::size_t P>
@@ -93,20 +104,27 @@ struct Binomial {
 };
 
 template <std::size_t P>
-constexpr Multipole<P> translate_multipole(const Multipole<P>& multipole, glm::dvec2 dr) noexcept {
+constexpr void translate_multipole(const Multipole<P>& multipole, Multipole<P>& dst, glm::dvec2 dr) noexcept {
     static constexpr auto binoms = Binomial<P>();
-    Multipole<P> result = { multipole.q, {} };
-    std::array<std::complex<double>, P+1> z_power = {1.0, std::complex<double>(dr.x, dr.y)};
+    double z_power_real[P+1] = {1.0, dr.x};
+    double z_power_imag[P+1] = {0.0, dr.y};
     for (int k=2; k<P+1; ++k) {
-        z_power[k] = z_power[k-1]*z_power[1];
+        z_power_real[k] = z_power_real[k-1]*z_power_real[1] - z_power_imag[k-1]*z_power_imag[1];
+        z_power_imag[k] = z_power_real[k-1]*z_power_imag[1] + z_power_imag[k-1]*z_power_real[1];
     }
-    for (int l=0; l<P; ++l) {
-        result.a[l] = -multipole.q*z_power[l+1]/(l+1.0);
+    for (int l=0; l<P; ++l) {  // TODO: try loops other way
+        auto& o = reinterpret_cast<double(&)[2]>(dst.a[l]);
+        double v = -multipole.q/(l+1.0);
+        o[0] += v*z_power_real[l+1];
+        o[1] += v*z_power_imag[l+1];
         for (int k=0; k<=l; ++k) {
-            result.a[l] += multipole.a[k]*z_power[l-k]*binoms(l,k);
+            double a_real = multipole.a[k].real();
+            double a_imag = multipole.a[k].imag();
+            o[0] += (a_real*z_power_real[l-k] - a_imag*z_power_imag[l-k])*binoms(l, k);
+            o[1] += (a_real*z_power_imag[l-k] + a_imag*z_power_real[l-k])*binoms(l, k);
         }
     }
-    return result;
+    dst.q += multipole.q;
 }
 
 template <std::size_t P>
@@ -181,16 +199,23 @@ constexpr void charge_to_local(double q, Local<P>& local, glm::dvec2 dr) noexcep
 
 template <std::size_t P>
 constexpr void translate_local(const Local<P>& src, Local<P>& dst, glm::dvec2 dr) noexcept {
-    auto z0 = std::complex<double>(dr.x, dr.y);
+    double z0_real = dr.x;
+    double z0_imag = dr.y;
     auto tmp = src;
     for (int j=0; j<P-1; ++j) {
         for (int k=P-j-2; k<P-1; ++k) {
-            tmp[k] -= z0*tmp[k+1];
+            auto& o = reinterpret_cast<double(&)[2]>(tmp[k]);
+            o[0] -= z0_real*tmp[k+1].real() - z0_imag*tmp[k+1].imag();
+            o[1] -= z0_real*tmp[k+1].imag() + z0_imag*tmp[k+1].real();
         }
     }
     for (int k=0; k<P-1; ++k) {  // one extra round as we're not storing b0
-        tmp[k] -= z0*tmp[k+1];
-        dst[k] += tmp[k];
+        auto& o = reinterpret_cast<double(&)[2]>(tmp[k]);
+        o[0] -= z0_real*tmp[k+1].real() - z0_imag*tmp[k+1].imag();
+        o[1] -= z0_real*tmp[k+1].imag() + z0_imag*tmp[k+1].real();
+        auto& o2 = reinterpret_cast<double(&)[2]>(dst[k]);
+        o2[0] += o[0];
+        o2[1] += o[1];
     }
     dst[P-1] += tmp[P-1];
 }

@@ -87,13 +87,13 @@ std::vector<Multipole<P>> compute_multipoles(const QuadTree<std::span<const glm:
         if (cell.children_count == 0) {
             std::ptrdiff_t offset = cell.value.data() - positions.data();
             for (int i=0; i<cell.value.size(); ++i) {
-                multipoles[idx] += calculate_multipole<P>(masses[offset+i], cell.value[i]-this_cell_center);
+                calculate_multipole<P>(masses[offset+i], multipoles[idx], cell.value[i]-this_cell_center);
             }
         } else {
             for (auto child_idx = cell.children; child_idx < cell.children + cell.children_count; ++child_idx) {
                 auto& child_mp = quadtree.cells[child_idx];
                 auto child_center = cell_center(child_mp.level, child_mp.coords);
-                multipoles[idx] += translate_multipole(multipoles[child_idx], child_center-this_cell_center);
+                translate_multipole(multipoles[child_idx], multipoles[idx], child_center-this_cell_center);
             }
         }
     }

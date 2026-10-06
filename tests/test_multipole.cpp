@@ -22,7 +22,8 @@ TEST_CASE(test_calculate_and_evaluate_multipole) {
     std::uniform_real_distribution<double> distrib(0, 1);
 
     auto charge = distrib(gen);
-    auto multipole = calculate_multipole<32>(charge, glm::dvec2{});
+    Multipole<32> multipole{};
+    calculate_multipole(charge, multipole, glm::dvec2{});
     assert(multipole.q == charge);
     for (int i=0; i<multipole.a.size(); ++i) {
         assert(multipole.a[i] == 0.0);
@@ -42,7 +43,7 @@ TEST_CASE(test_calculate_and_evaluate_multipole) {
     for (int j=0; j<16; ++j) {
         charge = distrib(gen);
         auto src = std::polar(distrib(gen), distrib(gen)*6.283);
-        multipole += calculate_multipole<multipole.a.size()>(charge, glm::dvec2{src.real(), src.imag()});
+        calculate_multipole<multipole.a.size()>(charge, multipole, glm::dvec2{src.real(), src.imag()});
         for (int i=0; i<16; ++i) {
             auto dr = tests[i] - glm::dvec2{ src.real(), src.imag() };
             auto dist = dr.x*dr.x + dr.y*dr.y;
@@ -58,10 +59,12 @@ TEST_CASE(test_translate_multipole) {
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> distrib(0, 1);
 
-    auto multipole = calculate_multipole<32>(distrib(gen), glm::dvec2{});
+    Multipole<32> multipole{};
+    calculate_multipole<32>(distrib(gen), multipole, glm::dvec2{});
     for (int i=0; i<16; ++i) {
         auto dst = std::polar(1.0, distrib(gen)*6.283);
-        auto translated = translate_multipole(multipole, glm::dvec2{-dst.real(), -dst.imag()});
+        Multipole<32> translated{};
+        translate_multipole(multipole, translated, glm::dvec2{-dst.real(), -dst.imag()});
         for (int j=0; j<16; ++j) {
             auto dr = std::polar(distrib(gen)+4.0, distrib(gen)*6.283);
             auto f1 = evaluate_multipole(multipole, glm::dvec2{ dst.real()+dr.real(), dst.imag()+dr.imag() });
@@ -72,11 +75,12 @@ TEST_CASE(test_translate_multipole) {
 
     for (int i=0; i<16; ++i) {
         auto src = std::polar(distrib(gen), distrib(gen)*6.283);
-        multipole += calculate_multipole<multipole.a.size()>(distrib(gen), glm::dvec2{ src.real(), src.imag() });
+        calculate_multipole<multipole.a.size()>(distrib(gen), multipole, glm::dvec2{ src.real(), src.imag() });
     }
     for (int i=0; i<16; ++i) {
         auto dst = std::polar(1.0, distrib(gen)*6.283);
-        auto translated = translate_multipole(multipole, glm::dvec2{ -dst.real(), -dst.imag() });
+        Multipole<32> translated{};
+        translate_multipole(multipole, translated, glm::dvec2{ -dst.real(), -dst.imag() });
         for (int j=0; j<16; ++j) {
             auto dr = std::polar(distrib(gen)+4.0, distrib(gen)*6.283);
             auto f1 = evaluate_multipole(multipole, glm::dvec2{ dst.real()+dr.real(), dst.imag()+dr.imag() });
@@ -91,7 +95,8 @@ TEST_CASE(test_convert_to_local_and_evaluate) {
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> distrib(0, 1);
 
-    auto multipole = calculate_multipole<32>(distrib(gen), glm::dvec2{});
+    Multipole<32> multipole{};
+    calculate_multipole<32>(distrib(gen), multipole, glm::dvec2{});
 
     for (int i=0; i<16; ++i) {
         auto dst = std::polar(distrib(gen)+3.0, distrib(gen)*6.283);
@@ -110,7 +115,7 @@ TEST_CASE(test_convert_to_local_and_evaluate) {
 
     for (int i=0; i<16; ++i) {
         auto src = std::polar(distrib(gen), distrib(gen)*6.283);
-        multipole += calculate_multipole<multipole.a.size()>(distrib(gen), glm::dvec2{ src.real(), src.imag() });
+        calculate_multipole<multipole.a.size()>(distrib(gen), multipole, glm::dvec2{ src.real(), src.imag() });
     }
 
     for (int i=0; i<16; ++i) {
@@ -136,7 +141,8 @@ TEST_CASE(test_charge_to_local) {
 
     for (int i=0; i<16; ++i) {
         auto charge = distrib(gen);
-        auto multipole = calculate_multipole<32>(charge, glm::dvec2{});
+        Multipole<32> multipole{};
+        calculate_multipole<32>(charge, multipole, glm::dvec2{});
         auto dst = std::polar(distrib(gen)+3.0, distrib(gen)*6.283);
         Local<32> local{}, local2{};
         convert_to_local(multipole, local, glm::dvec2{ -dst.real(), -dst.imag() });
@@ -152,7 +158,8 @@ TEST_CASE(test_translate_local) {
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> distrib(0, 1);
 
-    auto multipole = calculate_multipole<32>(distrib(gen), glm::dvec2{});
+    Multipole<32> multipole{};
+    calculate_multipole<32>(distrib(gen), multipole, glm::dvec2{});
 
     auto local_dst = std::polar(distrib(gen)+3.0, distrib(gen)*6.283);
     Local<32> local{};
@@ -174,7 +181,7 @@ TEST_CASE(test_translate_local) {
 
     for (int i=0; i<16; ++i) {
         auto src = std::polar(distrib(gen), distrib(gen)*6.283);
-        multipole += calculate_multipole<multipole.a.size()>(distrib(gen), glm::dvec2{ src.real(), src.imag() });
+        calculate_multipole<multipole.a.size()>(distrib(gen), multipole, glm::dvec2{ src.real(), src.imag() });
     }
     
     Local<32> local2{};
