@@ -72,7 +72,7 @@ void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<
     }
 }
 
-glm::dvec2 cell_center(std::uint8_t level, glm::uvec2 coords) {
+constexpr glm::dvec2 cell_center(std::uint8_t level, glm::uvec2 coords) noexcept {
     assert(level < 32);
     auto child_mask = 1u << (31-level);
     return glm::ldexp(glm::dvec2{ coords | child_mask }, glm::ivec2{ -32 });

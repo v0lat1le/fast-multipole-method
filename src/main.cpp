@@ -150,6 +150,7 @@ std::vector<glm::vec2> quadtree_lines(const QuadTree<std::span<const glm::dvec2>
 }
 
 struct Simulation {
+    std::vector<std::uint64_t> keys;
     std::vector<glm::dvec2> positions;
     std::vector<glm::dvec2> velocities;
     std::vector<double> masses;
@@ -159,9 +160,12 @@ struct Simulation {
     Simulation() : quadtree({}) {}
 
     void init() {
-        auto zipped = std::ranges::views::zip(positions, velocities, masses);
+        for (std::size_t i=0; i<keys.size(); ++i) {
+            keys[i] = InterleaveHash::operator()(positions[i]);
+        }
+        auto zipped = std::ranges::views::zip(keys, positions, velocities, masses);
         std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
-            return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
+            return std::get<0>(lhs) < std::get<0>(rhs);
         });
 
         //std::size_t bad = 0;
@@ -194,27 +198,29 @@ struct Simulation {
 
     void update(double dt) {
         compute_acceleration_multipoles(quadtree, positions, masses, accelerations, 1e-9);
-        std::size_t bad = 0;
-        for (std::size_t i=positions.size(); i-->0;) {
+        std::size_t out = 0;
+        for (std::size_t i=0; i<positions.size();++i) {
             velocities[i] += accelerations[i]*dt;
             accelerations[i] = {};
             positions[i] += velocities[i]*dt;
-            if (positions[i].x <= 0.0 || positions[i].x >= 1.0 || positions[i].y <= 0.0 || positions[i].y >= 1.0) {
-                bad++;
-                std::swap(positions[i], positions[positions.size()-bad]);
-                std::swap(velocities[i], velocities[velocities.size()-bad]);
-                std::swap(masses[i], masses[masses.size()-bad]);
+            if (positions[i].x > 0.0 && positions[i].x < 1.0 && positions[i].y > 0.0 && positions[i].y < 1.0) {
+                positions[out] = positions[i];
+                velocities[out] = velocities[i];
+                masses[out] = masses[i];
+                ++out;
             }
         }
-        positions.resize(positions.size()-bad);
-        velocities.resize(velocities.size()-bad);
-        accelerations.resize(accelerations.size()-bad);
-        masses.resize(masses.size()-bad);
+        keys.resize(out);
+        positions.resize(out);
+        velocities.resize(out);
+        accelerations.resize(out);
+        masses.resize(out);
 
         init();
     }
 
     void resize(std::size_t n) {
+        keys.resize(n);
         positions.resize(n);
         velocities.resize(n);
         masses.resize(n);
