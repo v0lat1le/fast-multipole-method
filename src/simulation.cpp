@@ -107,13 +107,6 @@ void compute_acceleration_multipole(glm::dvec2 src_pos, const Multipole<P>& mult
     }
 }
 
-template<std::size_t P>
-void update_local(Local<P>& dst, const Local<P>& src) {
-    for (int i=0; i<P; ++i) {
-        dst[i] += src[i];
-    }
-}
-
 void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps) {
     std::vector<std::uint32_t> neighbour_storage;
     std::vector<std::uint32_t> neighbours;
@@ -185,13 +178,13 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
                     auto& cousin = quadtree.cells[cousin_idx];
                     if (not quadtree.is_adjacent(cell.level, cell.coords, cousin.level, cousin.coords)) {
                         auto dr = cell_center(cousin.level, cousin.coords) - cell_center(cell.level, cell.coords);
-                        update_local(locals[cell_idx], convert_to_local(multipoles[cousin_idx], dr));
+                        convert_to_local(multipoles[cousin_idx], locals[cell_idx], dr);
                     }
                 }            
             } else if (not quadtree.is_adjacent(cell.level, cell.coords, parent_neighbour.level, parent_neighbour.coords)) {
                 auto this_cell_center = cell_center(cell.level, cell.coords);
                 for (std::size_t point_idx=parent_neighbour.value.data() - positions.data(); point_idx<parent_neighbour.value.data() + parent_neighbour.value.size() - positions.data(); ++point_idx) {
-                    update_local(locals[cell_idx], charge_to_local<12>(masses[point_idx], positions[point_idx] - this_cell_center));
+                    charge_to_local<12>(masses[point_idx], locals[cell_idx], positions[point_idx] - this_cell_center);
                 }
             }
         }
@@ -219,10 +212,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
         auto& parent = quadtree.cells[cell.parent];
         auto parent_center = cell_center(parent.level, parent.coords);
 
-        auto translated_local = translate_local(locals[cell.parent], parent_center-this_cell_center);
-        for (int i=0; i<translated_local.size(); ++i) {
-            locals[idx][i] += translated_local[i];
-        }
+        translate_local(locals[cell.parent], locals[idx], parent_center-this_cell_center);
 
         if (cell.children_count == 0) {
             for (auto& p: cell.value) {

@@ -95,7 +95,8 @@ TEST_CASE(test_convert_to_local_and_evaluate) {
 
     for (int i=0; i<16; ++i) {
         auto dst = std::polar(distrib(gen)+3.0, distrib(gen)*6.283);
-        auto local = convert_to_local(multipole, glm::dvec2{ -dst.real(), -dst.imag() });
+        Local<32> local{};
+        convert_to_local(multipole, local, glm::dvec2{-dst.real(), -dst.imag()});
         auto f1 = evaluate_multipole(multipole, glm::dvec2{ dst.real(), dst.imag() });
         auto f2 = evaluate_local(local, glm::dvec2{});
         assert(equal_approx(f1, f2, 1e-6));
@@ -114,7 +115,8 @@ TEST_CASE(test_convert_to_local_and_evaluate) {
 
     for (int i=0; i<16; ++i) {
         auto dst = std::polar(distrib(gen)+3.0, distrib(gen)*6.283);
-        auto local = convert_to_local(multipole, glm::dvec2{ -dst.real(), -dst.imag() });
+        Local<32> local{};
+        convert_to_local(multipole, local, glm::dvec2{ -dst.real(), -dst.imag() });
         auto f1 = evaluate_multipole(multipole, glm::dvec2{ dst.real(), dst.imag() });
         auto f2 = evaluate_local(local, glm::dvec2{});
         assert(equal_approx(f1, f2, 1e-6));
@@ -136,8 +138,9 @@ TEST_CASE(test_charge_to_local) {
         auto charge = distrib(gen);
         auto multipole = calculate_multipole<32>(charge, glm::dvec2{});
         auto dst = std::polar(distrib(gen)+3.0, distrib(gen)*6.283);
-        auto local = convert_to_local(multipole, glm::dvec2{ -dst.real(), -dst.imag() });
-        auto local2 = charge_to_local<32>(charge, glm::dvec2{ -dst.real(), -dst.imag() });
+        Local<32> local{}, local2{};
+        convert_to_local(multipole, local, glm::dvec2{ -dst.real(), -dst.imag() });
+        charge_to_local<32>(charge, local2, glm::dvec2{ -dst.real(), -dst.imag() });
         for (int j=0; j<32; ++j) {
             assert(equal_approx(local[j], local2[j]));
         }
@@ -152,10 +155,12 @@ TEST_CASE(test_translate_local) {
     auto multipole = calculate_multipole<32>(distrib(gen), glm::dvec2{});
 
     auto local_dst = std::polar(distrib(gen)+3.0, distrib(gen)*6.283);
-    auto local = convert_to_local(multipole, glm::dvec2{ -local_dst.real(), -local_dst.imag() });
+    Local<32> local{};
+    convert_to_local(multipole, local, glm::dvec2{ -local_dst.real(), -local_dst.imag() });
     for (int i=0; i<16; ++i) {
         auto dst = std::polar(distrib(gen)*0.4, distrib(gen)*6.283);
-        auto translated = translate_local(local, glm::dvec2(-dst.real(), -dst.imag()));
+        Local<32> translated{};
+        translate_local(local, translated, glm::dvec2(-dst.real(), -dst.imag()));
         auto f1 = evaluate_local(local, glm::dvec2{ dst.real(), dst.imag() });
         auto f2 = evaluate_local(translated, glm::dvec2{});
         assert(equal_approx(f1, f2, 1e-9));
@@ -172,16 +177,18 @@ TEST_CASE(test_translate_local) {
         multipole += calculate_multipole<multipole.a.size()>(distrib(gen), glm::dvec2{ src.real(), src.imag() });
     }
     
-    local = convert_to_local(multipole, glm::dvec2{ -local_dst.real(), -local_dst.imag() });
+    Local<32> local2{};
+    convert_to_local(multipole, local2, glm::dvec2{ -local_dst.real(), -local_dst.imag() });
     for (int i=0; i<16; ++i) {
         auto dst = std::polar(distrib(gen)*0.4, distrib(gen)*6.283);
-        auto translated = translate_local(local, glm::dvec2(-dst.real(), -dst.imag()));
-        auto f1 = evaluate_local(local, glm::dvec2{ dst.real(), dst.imag() });
+        Local<32> translated{};
+        translate_local(local2, translated, glm::dvec2(-dst.real(), -dst.imag()));
+        auto f1 = evaluate_local(local2, glm::dvec2{ dst.real(), dst.imag() });
         auto f2 = evaluate_local(translated, glm::dvec2{});
         assert(equal_approx(f1, f2, 1e-9));
         for (int j=0; j<16; ++j) {
             auto dr = std::polar(distrib(gen)*0.4, distrib(gen)*6.283);
-            auto f3 = evaluate_local(local, glm::dvec2{ dst.real()+dr.real(), dst.imag()+dr.imag() });
+            auto f3 = evaluate_local(local2, glm::dvec2{ dst.real()+dr.real(), dst.imag()+dr.imag() });
             auto f4 = evaluate_local(translated, glm::dvec2{ dr.real(), dr.imag() });
             assert(equal_approx(f3, f4, 1e-9));
         }

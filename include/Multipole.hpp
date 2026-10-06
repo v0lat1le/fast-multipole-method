@@ -128,7 +128,7 @@ struct M2L {
 };
 
 template <std::size_t P>
-constexpr Local<P> convert_to_local(const Multipole<P>& multipole, glm::dvec2 dr) noexcept {
+constexpr void convert_to_local(const Multipole<P>& multipole, Local<P>& local, glm::dvec2 dr) noexcept {
     static constexpr auto coefficients = M2L<P>();
     double d = dr.x*dr.x + dr.y*dr.y;
     double inv_real = dr.x/d;
@@ -152,48 +152,45 @@ constexpr Local<P> convert_to_local(const Multipole<P>& multipole, glm::dvec2 dr
             bs_imag[l] += az_imag*coefficients(k, l);
         }
     }
-    Local<P> result{};
     for (int l=0; l<P; ++l) {
         double f_real = bs_real[l] - multipole.q/(l+1.0);
         double f_imag = bs_imag[l];
-        auto& o = reinterpret_cast<double(&)[2]>(result[l]);
+        auto& o = reinterpret_cast<double(&)[2]>(local[l]);
         o[0] += f_real*z_power_real[l] - f_imag*z_power_imag[l];
         o[1] += f_real*z_power_imag[l] + f_imag*z_power_real[l];
     }
-    return result;
 }
 
 template <std::size_t P>
-constexpr Local<P> charge_to_local(double q, glm::dvec2 dr) noexcept {
+constexpr void charge_to_local(double q, Local<P>& local, glm::dvec2 dr) noexcept {
     double d = dr.x*dr.x + dr.y*dr.y;
     double inv_real = dr.x/d;
     double inv_imag = -dr.y/d;
     double z_power_real = inv_real;
     double z_power_imag = inv_imag;
-    Local<P> result{};
     for (int l=0; l<P; ++l) {
         double f_real = -q/(l+1.0);
-        auto& o = reinterpret_cast<double(&)[2]>(result[l]);
+        auto& o = reinterpret_cast<double(&)[2]>(local[l]);
         o[0] += f_real*z_power_real;
         o[1] += f_real*z_power_imag;
         double z_power_real_next = z_power_real*inv_real - z_power_imag*inv_imag; // TODO: unnecessary step on the last iter
         z_power_imag = z_power_real*inv_imag + z_power_imag*inv_real;
         z_power_real = z_power_real_next;
     }
-    return result;
 }
 
 template <std::size_t P>
-constexpr Local<P> translate_local(const Local<P>& local, glm::dvec2 dr) noexcept {
+constexpr void translate_local(const Local<P>& src, Local<P>& dst, glm::dvec2 dr) noexcept {
     auto z0 = std::complex<double>(dr.x, dr.y);
-    auto result = local;
+    auto tmp = src;
     for (int j=0; j<P-1; ++j) {
         for (int k=P-j-2; k<P-1; ++k) {
-            result[k] -= z0*result[k+1];
+            tmp[k] -= z0*tmp[k+1];
         }
     }
     for (int k=0; k<P-1; ++k) {  // one extra round as we're not storing b0
-        result[k] -= z0*result[k+1];
+        tmp[k] -= z0*tmp[k+1];
+        dst[k] += tmp[k];
     }
-    return result;
+    dst[P-1] += tmp[P-1];
 }
