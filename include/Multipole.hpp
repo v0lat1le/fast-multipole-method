@@ -164,6 +164,26 @@ constexpr Local<P> convert_to_local(const Multipole<P>& multipole, glm::dvec2 dr
 }
 
 template <std::size_t P>
+constexpr Local<P> charge_to_local(double q, glm::dvec2 dr) noexcept {
+    double d = dr.x*dr.x + dr.y*dr.y;
+    double inv_real = dr.x/d;
+    double inv_imag = -dr.y/d;
+    double z_power_real = inv_real;
+    double z_power_imag = inv_imag;
+    Local<P> result{};
+    for (int l=0; l<P; ++l) {
+        double f_real = -q/(l+1.0);
+        auto& o = reinterpret_cast<double(&)[2]>(result[l]);
+        o[0] += f_real*z_power_real;
+        o[1] += f_real*z_power_imag;
+        double z_power_real_next = z_power_real*inv_real - z_power_imag*inv_imag; // TODO: unnecessary step on the last iter
+        z_power_imag = z_power_real*inv_imag + z_power_imag*inv_real;
+        z_power_real = z_power_real_next;
+    }
+    return result;
+}
+
+template <std::size_t P>
 constexpr Local<P> translate_local(const Local<P>& local, glm::dvec2 dr) noexcept {
     auto z0 = std::complex<double>(dr.x, dr.y);
     auto result = local;

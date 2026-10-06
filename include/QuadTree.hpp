@@ -71,7 +71,7 @@ struct QuadTree {
 
     static constexpr bool is_adjacent(std::size_t a_level, glm::uvec2 a, std::size_t b_level, glm::uvec2 b) noexcept {
         assert(a_level < 32);
-        assert(b_level <= a_level);
+        assert(b_level < 32);
         auto a_size = std::uint64_t(1) << (32-a_level);  // uint64_t so we don't overflow
         auto b_size = std::uint64_t(1) << (32-b_level);
 

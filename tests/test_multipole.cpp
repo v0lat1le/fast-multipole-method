@@ -127,6 +127,23 @@ TEST_CASE(test_convert_to_local_and_evaluate) {
     }
 }
 
+TEST_CASE(test_charge_to_local) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> distrib(0, 1);
+
+    for (int i=0; i<16; ++i) {
+        auto charge = distrib(gen);
+        auto multipole = calculate_multipole<32>(charge, glm::dvec2{});
+        auto dst = std::polar(distrib(gen)+3.0, distrib(gen)*6.283);
+        auto local = convert_to_local(multipole, glm::dvec2{ -dst.real(), -dst.imag() });
+        auto local2 = charge_to_local<32>(charge, glm::dvec2{ -dst.real(), -dst.imag() });
+        for (int j=0; j<32; ++j) {
+            assert(equal_approx(local[j], local2[j]));
+        }
+    }
+}
+
 TEST_CASE(test_translate_local) {
     std::random_device rd;
     std::mt19937 gen(rd());

@@ -15,14 +15,14 @@
       "name": "debug_gcc",
       "inherits": "debug_base",
       "cacheVariables": {
-        "CMAKE_CXX_FLAGS": "-Wall -Wextra -Wpedantic"
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -Wpedantic -fsanitize=address,undefined"
       }
     },
     {
       "name": "debug_clang",
-      "inherits": "debug_gcc",
+      "inherits": "debug_base",
       "cacheVariables": {
-        "CMAKE_CXX_FLAGS": "-Wall -Wextra -Wpedantic"
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -Wpedantic -fsanitize=address,undefined"
       }
     },
     {
