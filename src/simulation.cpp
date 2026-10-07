@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <barrier>
 #include <complex>
 #include <cmath>
 #include <mutex>
@@ -138,8 +139,50 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
     }
     neighbours.emplace_back(neighbour_storage.size());
 
-    auto multipoles = compute_multipoles<12>(quadtree, positions, masses);
-    auto locals = std::vector<Local<12>>(quadtree.cells.size());
+    auto multipoles = std::vector<Multipole<12>>(quadtree.cells.size());
+    auto multipole_upward_pass = [&](std::uint32_t cell_idx) {
+        auto& cell = quadtree.cells[cell_idx];
+        auto this_cell_center = cell_center(cell.level, cell.coords);
+        if (cell.children_count == 0) {
+            std::ptrdiff_t offset = cell.value.data() - positions.data();
+            for (int i=0; i<cell.value.size(); ++i) {
+                calculate_multipole<12>(masses[offset+i], multipoles[cell_idx], cell.value[i]-this_cell_center);
+            }
+        } else {
+            for (auto child_idx = cell.children; child_idx < cell.children + cell.children_count; ++child_idx) {
+                auto& child_mp = quadtree.cells[child_idx];
+                auto child_center = cell_center(child_mp.level, child_mp.coords);
+                translate_multipole(multipoles[child_idx], multipoles[cell_idx], child_center-this_cell_center);
+            }
+        }
+    };
+
+    {
+        std::barrier sync_point(6);
+        std::atomic<std::int64_t> next_cell = quadtree.cells.size()-1;
+        auto thread_func = [&]() {
+            int level = quadtree.cells[quadtree.cells.size() - 1].level;
+            while (true) {
+                auto cell_idx = next_cell.fetch_add(-1, std::memory_order_relaxed);
+                if (cell_idx < 0) {
+                    while (level >= 0) {
+                        sync_point.arrive_and_wait();
+                        --level;
+                    }
+                    return;
+                }
+                while (level > quadtree.cells[cell_idx].level) {
+                    sync_point.arrive_and_wait();
+                    --level;
+                }
+                multipole_upward_pass(cell_idx);
+            }
+        };
+        std::array<std::jthread, 6> threads;
+        for (int i=0; i<threads.size(); ++i) {
+            threads[i] = std::jthread{ thread_func };
+        };
+    }
 
     auto process_neighbour = [&](std::uint32_t cell_idx, std::uint32_t neighbour_idx, auto& recurse){
         auto& cell = quadtree.cells[cell_idx];
@@ -161,6 +204,8 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
         }
     };
 
+    auto locals = std::vector<Local<12>>(quadtree.cells.size());
+
     auto process_cell = [&](std::uint32_t cell_idx) {
         auto& cell = quadtree.cells[cell_idx];
         if (cell.children_count == 0) {
@@ -170,7 +215,6 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
                 process_neighbour(cell_idx, neighbour_storage[neighbour_idx], process_neighbour);
             }
         }
-        auto& parent = quadtree.cells[cell.parent];
         for (std::uint32_t parent_neighbour_idx=neighbours[cell.parent]; parent_neighbour_idx < neighbours[cell.parent+1]; ++parent_neighbour_idx) {
             auto& parent_neighbour = quadtree.cells[neighbour_storage[parent_neighbour_idx]];
             if (parent_neighbour.children_count > 0) {
@@ -191,7 +235,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
     };
 
     {
-        std::atomic<std::size_t> next_cell = 1;
+        std::atomic<std::uint32_t> next_cell = 1;
         auto thread_func = [&]() {
             while (true) {
                 auto cell_idx = next_cell.fetch_add(1, std::memory_order_relaxed);
@@ -205,19 +249,47 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
         };
     }
 
-    for (std::size_t idx=1; idx<quadtree.cells.size(); ++idx) {
-        auto& cell = quadtree.cells[idx];
+    auto local_expansion_down_pass = [&](std::uint32_t cell_idx) {
+        auto& cell = quadtree.cells[cell_idx];
         auto this_cell_center = cell_center(cell.level, cell.coords) ;
 
         auto& parent = quadtree.cells[cell.parent];
         auto parent_center = cell_center(parent.level, parent.coords);
 
-        translate_local(locals[cell.parent], locals[idx], parent_center-this_cell_center);
+        translate_local(locals[cell.parent], locals[cell_idx], parent_center-this_cell_center);
 
         if (cell.children_count == 0) {
             for (auto& p: cell.value) {
-                accelerations[&p - positions.data()] += evaluate_local(locals[idx], p-this_cell_center);
+                accelerations[&p - positions.data()] += evaluate_local(locals[cell_idx], p-this_cell_center);
             }
         }
+    };
+
+    {
+        std::barrier sync_point(6);
+        std::atomic<std::uint32_t> next_cell = 1;
+        auto thread_func = [&]() {
+            std::uint8_t level = 0;
+            while (true) {
+                auto cell_idx = next_cell.fetch_add(1, std::memory_order_relaxed);
+                if (cell_idx >= quadtree.cells.size()) {
+                    auto last_level = quadtree.cells[quadtree.cells.size() - 1].level;
+                    while (level < last_level) {
+                        sync_point.arrive_and_wait();
+                        ++level;
+                    }
+                    return;
+                };
+                while (level < quadtree.cells[cell_idx].level) {
+                    sync_point.arrive_and_wait();
+                    ++level;
+                }
+                local_expansion_down_pass(cell_idx);
+            }
+        };
+        std::array<std::jthread, 6> threads;
+        for (int i=0; i<threads.size(); ++i) {
+            threads[i] = std::jthread{ thread_func };
+        };
     }
 }
