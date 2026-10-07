@@ -8,10 +8,10 @@ struct Renderer {
 
 	Renderer(RGFW_window* window_) {
 		window = window_;
-        RGFW_glHints* hints = RGFW_getGlobalHints_OpenGL();
-        hints->major = 3;
-        hints->minor = 3;
-		RGFW_window_createContext_OpenGL(window, hints);
+        RGFW_getGlobalHints_OpenGL()->major = 3;
+        RGFW_getGlobalHints_OpenGL()->minor = 3;
+        RGFW_glContext* context = RGFW_createContext_OpenGL(RGFW_getGlobalHints_OpenGL());
+		RGFW_window_setContext_OpenGL(window, context);
         gladLoadGL((GLADloadfunc)RGFW_getProcAddress_OpenGL);
 
         RGFW_window_makeCurrentContext_OpenGL(window);
