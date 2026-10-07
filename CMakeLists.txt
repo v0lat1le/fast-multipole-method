@@ -74,3 +74,8 @@ add_executable(test_multipole "tests/test_multipole.cpp")
 target_include_directories(test_multipole PRIVATE "include")
 target_link_libraries(test_multipole PRIVATE grtest external::glm)
 grtest_discover_tests(test_multipole)
+
+add_executable(test_simulation_perf "tests/test_simulation_perf.cpp" "src/simulation.cpp")
+target_include_directories(test_simulation_perf PRIVATE "include")
+target_link_libraries(test_simulation_perf PRIVATE grtest external::glm)
+grtest_discover_tests(test_simulation_perf)
