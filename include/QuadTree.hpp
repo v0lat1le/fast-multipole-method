@@ -75,6 +75,6 @@ struct QuadTree {
         auto a_size = std::uint64_t(1) << (32-a_level);  // uint64_t so we don't overflow
         auto b_size = std::uint64_t(1) << (32-b_level);
 
-        return b.x <= a.x + a_size and b.y <= a.y + a_size and a.x <= b.x + b_size and a.y <= b.y + b_size;
+        return b.x <= a.x + a_size & b.y <= a.y + a_size & a.x <= b.x + b_size & a.y <= b.y + b_size;
     }
 };
