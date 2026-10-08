@@ -10,18 +10,6 @@ template <std::size_t P>
 struct Multipole {
     double q;
     std::array<std::complex<double>, P> a;
-
-    constexpr Multipole& operator+=(const Multipole& rhs) noexcept {
-        q += rhs.q;
-        for (int i=0; i<P; ++i) {
-            a[i] += rhs.a[i];
-        }
-        return *this;
-    }
-    friend constexpr Multipole operator+(Multipole lhs, const Multipole& rhs) noexcept {
-        lhs += rhs;
-        return lhs;
-    }
 };
 
 template <std::size_t P>
@@ -30,7 +18,7 @@ constexpr void calculate_multipole(double charge, Multipole<P>& dst, glm::dvec2 
     double z_imag = dr.y;
     double z_power_real = charge;
     double z_power_imag = 0.0;
-    for (int k=0; k<P; ++k) {
+    for (std::size_t k=0; k<P; ++k) {
         double z_power_real_next = z_power_real*z_real - z_power_imag*z_imag;
         z_power_imag = z_power_real*z_imag + z_power_imag*z_real;
         z_power_real = z_power_real_next;
@@ -50,7 +38,7 @@ constexpr glm::dvec2 evaluate_multipole(const Multipole<P>& multipole, glm::dvec
     double accel_imag = multipole.q*inv_imag;
     double z_power_real = inv_real;
     double z_power_imag = inv_imag;
-    for (int k=0; k<P; ++k) {
+    for (std::size_t k=0; k<P; ++k) {
         double z_power_real_next = z_power_real*inv_real - z_power_imag*inv_imag;
         z_power_imag = z_power_real*inv_imag + z_power_imag*inv_real;
         z_power_real = z_power_real_next;
@@ -73,7 +61,7 @@ constexpr glm::dvec2 evaluate_local(const Local<P>& local, glm::dvec2 dr) noexce
     double z_power_imag = z_imag;
     auto accel_real = local[0].real();
     auto accel_imag = local[0].imag();
-    for (int l=1; l<P; ++l) {
+    for (std::size_t l=1; l<P; ++l) {
         accel_real += (l+1.0)*(local[l].real()*z_power_real - local[l].imag()*z_power_imag);
         accel_imag += (l+1.0)*(local[l].real()*z_power_imag + local[l].imag()*z_power_real);
         double z_power_real_next = z_power_real*z_real - z_power_imag*z_imag;  // TODO: uneccesary mul on last iter
@@ -89,16 +77,16 @@ struct Binomial {
 
     constexpr Binomial() noexcept {
         coefficients[0] = 1.0;
-        for (int n=1; n<P; ++n) {
+        for (std::size_t n=1; n<P; ++n) {
             coefficients[n*(n+1)/2] = 1.0;
-            for (int k=1; k<n; ++k) {
+            for (std::size_t k=1; k<n; ++k) {
                 coefficients[n*(n+1)/2+k] = operator()(n-1, k-1) + operator()(n-1, k);
             }
             coefficients[n*(n+1)/2+n] = 1.0;
         }
     }
 
-    constexpr double operator()(int n, int k) const noexcept {
+    constexpr double operator()(std::size_t n, std::size_t k) const noexcept {
         return coefficients[n*(n+1)/2 + k];
     }
 };
@@ -108,16 +96,16 @@ constexpr void translate_multipole(const Multipole<P>& multipole, Multipole<P>& 
     static constexpr auto binoms = Binomial<P>();
     double z_power_real[P+1] = {1.0, dr.x};
     double z_power_imag[P+1] = {0.0, dr.y};
-    for (int k=2; k<P+1; ++k) {
+    for (std::size_t k=2; k<P+1; ++k) {
         z_power_real[k] = z_power_real[k-1]*z_power_real[1] - z_power_imag[k-1]*z_power_imag[1];
         z_power_imag[k] = z_power_real[k-1]*z_power_imag[1] + z_power_imag[k-1]*z_power_real[1];
     }
-    for (int l=0; l<P; ++l) {  // TODO: try loops other way
+    for (std::size_t l=0; l<P; ++l) {  // TODO: try loops other way
         auto& o = reinterpret_cast<double(&)[2]>(dst.a[l]);
         double v = -multipole.q/(l+1.0);
         o[0] += v*z_power_real[l+1];
         o[1] += v*z_power_imag[l+1];
-        for (int k=0; k<=l; ++k) {
+        for (std::size_t k=0; k<=l; ++k) {
             double a_real = multipole.a[k].real();
             double a_imag = multipole.a[k].imag();
             o[0] += (a_real*z_power_real[l-k] - a_imag*z_power_imag[l-k])*binoms(l, k);
@@ -133,14 +121,14 @@ struct M2L {
 
     constexpr M2L() {
         Binomial<2*P> binoms;
-        for (int k=0; k<P; ++k) {
-            for (int l=0; l<P; ++l) {
+        for (std::size_t k=0; k<P; ++k) {
+            for (std::size_t l=0; l<P; ++l) {
                 coefficients[k][l] = ((k&1) ? 1.0 : -1.0)*binoms(l+1+k, k);
             }
         }
     }
 
-    constexpr double operator()(int k, int l) const noexcept {
+    constexpr double operator()(std::size_t k, std::size_t l) const noexcept {
         return coefficients[k][l];
     }
 };
@@ -153,24 +141,24 @@ constexpr void convert_to_local(const Multipole<P>& multipole, Local<P>& local, 
     double inv_imag = -dr.y/d;
     double z_power_real[P] = { inv_real };
     double z_power_imag[P] = { inv_imag };
-    for (int k=1; k<P; ++k) {
+    for (std::size_t k=1; k<P; ++k) {
         z_power_real[k] = z_power_real[k-1]*inv_real - z_power_imag[k-1]*inv_imag;
         z_power_imag[k] = z_power_real[k-1]*inv_imag + z_power_imag[k-1]*inv_real;
     }
     // not computing or storing b0 as it doesn't contribute to the force
     double bs_real[P] = {};
     double bs_imag[P] = {};
-    for (int k=0; k<P; ++k) {
+    for (std::size_t k=0; k<P; ++k) {
         double a_real = multipole.a[k].real();
         double a_imag = multipole.a[k].imag();
         double az_real = a_real*z_power_real[k] - a_imag*z_power_imag[k];
         double az_imag = a_real*z_power_imag[k] + a_imag*z_power_real[k];
-        for (int l=0; l<P; ++l) {
+        for (std::size_t l=0; l<P; ++l) {
             bs_real[l] += az_real*coefficients(k, l);
             bs_imag[l] += az_imag*coefficients(k, l);
         }
     }
-    for (int l=0; l<P; ++l) {
+    for (std::size_t l=0; l<P; ++l) {
         double f_real = bs_real[l] - multipole.q/(l+1.0);
         double f_imag = bs_imag[l];
         auto& o = reinterpret_cast<double(&)[2]>(local[l]);
@@ -186,7 +174,7 @@ constexpr void charge_to_local(double q, Local<P>& local, glm::dvec2 dr) noexcep
     double inv_imag = -dr.y/d;
     double z_power_real = inv_real;
     double z_power_imag = inv_imag;
-    for (int l=0; l<P; ++l) {
+    for (std::size_t l=0; l<P; ++l) {
         double f_real = -q/(l+1.0);
         auto& o = reinterpret_cast<double(&)[2]>(local[l]);
         o[0] += f_real*z_power_real;
@@ -202,14 +190,14 @@ constexpr void translate_local(const Local<P>& src, Local<P>& dst, glm::dvec2 dr
     double z0_real = dr.x;
     double z0_imag = dr.y;
     auto tmp = src;
-    for (int j=0; j<P-1; ++j) {
-        for (int k=P-j-2; k<P-1; ++k) {
+    for (std::size_t j=0; j<P-1; ++j) {
+        for (std::size_t k=P-j-2; k<P-1; ++k) {
             auto& o = reinterpret_cast<double(&)[2]>(tmp[k]);
             o[0] -= z0_real*tmp[k+1].real() - z0_imag*tmp[k+1].imag();
             o[1] -= z0_real*tmp[k+1].imag() + z0_imag*tmp[k+1].real();
         }
     }
-    for (int k=0; k<P-1; ++k) {  // one extra round as we're not storing b0
+    for (std::size_t k=0; k<P-1; ++k) {  // one extra round as we're not storing b0
         auto& o = reinterpret_cast<double(&)[2]>(tmp[k]);
         o[0] -= z0_real*tmp[k+1].real() - z0_imag*tmp[k+1].imag();
         o[1] -= z0_real*tmp[k+1].imag() + z0_imag*tmp[k+1].real();

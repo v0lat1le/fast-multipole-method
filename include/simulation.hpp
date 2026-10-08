@@ -50,7 +50,7 @@ constexpr bool cmp_zcurve_bitmagic(const glm::vec<2, T, glm::defaultp>& lhs, con
 
 template<typename Range, typename Proj>
 QuadTree<std::pair<std::uint32_t, std::uint32_t>> build_quadtree(Range points, Proj proj, std::uint32_t max_points=1, std::uint8_t max_levels=31) {
-    QuadTree<std::pair<std::uint32_t, std::uint32_t>> quadtree({ 0, points.size() });
+    QuadTree<std::pair<std::uint32_t, std::uint32_t>> quadtree({ 0u, static_cast<std::uint32_t>(points.size()) });
     quadtree.cells.reserve(2*points.size()/max_points);
 
     for (std::uint32_t idx = 0; idx < quadtree.cells.size(); ++idx) {

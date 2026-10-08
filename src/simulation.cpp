@@ -81,7 +81,7 @@ void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std
     };
     by_level_chunked(quadtree.cells | std::views::drop(1) | std::views::reverse, [&quadtree, &multipole_upward_pass](const auto& chunk) {
         for (const auto& cell: chunk) {
-            multipole_upward_pass(&cell - quadtree.cells.data());
+            multipole_upward_pass(static_cast<std::uint32_t>(&cell - quadtree.cells.data()));
         }
     });
 
@@ -154,7 +154,7 @@ void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std
 
     by_level_chunked(quadtree.cells | std::views::drop(1), [&quadtree, &process_cell](const auto& chunk) {
         for (const auto& cell: chunk) {
-            process_cell(&cell - quadtree.cells.data());
+            process_cell(static_cast<std::uint32_t>(&cell - quadtree.cells.data()));
         }
     });
 
@@ -175,7 +175,7 @@ void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std
     };
     by_level_chunked(quadtree.cells | std::views::drop(1), [&quadtree, &local_expansion_down_pass](const auto& chunk) {
         for (const auto& cell: chunk) {
-            local_expansion_down_pass(&cell - quadtree.cells.data());
+            local_expansion_down_pass(static_cast<std::uint32_t>(&cell - quadtree.cells.data()));
         }
     });
 }
