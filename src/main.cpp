@@ -134,7 +134,8 @@ void make_two_stars(std::span<glm::dvec2> positions, std::span<glm::dvec2> veloc
     }
 }
 
-std::vector<glm::vec2> quadtree_lines(const QuadTree<std::span<const glm::dvec2>>& cells, int max_level=7) {
+template<typename T>
+std::vector<glm::vec2> quadtree_lines(const QuadTree<T>& cells, int max_level=7) {
     std::vector<glm::vec2> lineVertices;
     for (auto& cell: cells.cells) {
         if (cell.level > max_level) continue;
@@ -156,7 +157,7 @@ struct Simulation {
     std::vector<glm::dvec2> velocities;
     std::vector<double> masses;
     std::vector<glm::dvec2> accelerations;
-    QuadTree<std::span<const glm::dvec2>>quadtree;
+    QuadTree<std::pair<std::uint32_t, std::uint32_t>>quadtree;
     ThreadPool thread_pool;
 
     Simulation() : quadtree({}), thread_pool(8) {}
@@ -166,10 +167,8 @@ struct Simulation {
             keys[i] = InterleaveHash::operator()(positions[i]);
         }
         auto zipped = std::ranges::views::zip(keys, positions, velocities, masses);
-        std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
-            return std::get<0>(lhs) < std::get<0>(rhs);
-        });
-        quadtree = build_quadtree(positions, 20);
+        auto proj = [](const auto& v) { return std::get<0>(v); };
+        quadtree = build_quadtree(zipped, proj, 20);
     }
 
     void update(double dt) {

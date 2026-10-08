@@ -43,13 +43,20 @@ TEST_CASE(test_cmp_zcurve_points) {
 }
 
 void check_quadtree(std::vector<glm::dvec2>& points) {
-    std::sort(points.begin(), points.end(), static_cast<bool(*)(const glm::dvec2&, const glm::dvec2&)>(cmp_zcurve_bitmagic));
-    auto quadtree = build_quadtree(points);
+    std::vector<std::uint64_t> keys(points.size());
+    for (std::size_t i=0; i<points.size(); ++i) {
+        keys[i] = InterleaveHash::operator()(points[i]);
+    }
+    auto zipped = std::ranges::views::zip(keys, points);
+    auto proj = [](const auto& v) { return std::get<0>(v); };
+
+    auto quadtree = build_quadtree(zipped, proj);
     for (auto& cell: quadtree.cells) {
         double x = std::ldexp(cell.coords.x, -32);
         double y = std::ldexp(cell.coords.y, -32);
         double cell_size = std::ldexp(1.0, -static_cast<int>(cell.level));
-        for (auto& point: cell.value) {
+        for (auto point_idx=cell.value.first; point_idx<cell.value.first; ++point_idx) {
+            auto& point = points[point_idx];
             assert(point.x >= x && point.y >= y && point.x < x+cell_size && point.y < y+cell_size);
         }
     }
@@ -81,6 +88,26 @@ TEST_CASE(test_build_quadtree_random) {
     }
 }
 
+TEST_CASE(test_build_quadtree2_random) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> distrib(0, 1);
+
+    std::vector<glm::dvec2> positions(1000);
+    std::vector<std::uint64_t> keys(1000);
+    for (int k=0; k<10; ++k) {
+        for (std::size_t i=0; i<positions.size(); ++i) {
+            positions[i] = glm::dvec2{ distrib(gen), distrib(gen) };
+            keys[i] = InterleaveHash::operator()(positions[i]);
+        }
+        auto zipped = std::ranges::views::zip(keys, positions);
+        auto proj = [](const std::tuple<std::uint64_t, glm::dvec2>& v) {
+            return std::get<0>(v);
+        };
+        auto quadtree = build_quadtree(zipped, proj);
+    }
+}
+
 bool equal_approx(double a, double b, double eps=1e-10) {
     return std::abs(a - b) <= eps;
 }
@@ -96,18 +123,21 @@ std::future<void> ready_future() {
 }
 
 void run_test(std::vector<glm::dvec2> positions, std::vector<double> masses) {
+    std::vector<std::uint64_t> keys(positions.size());
     std::vector<glm::dvec2> accelerations_exepected(positions.size());
     std::vector<glm::dvec2> accelerations(positions.size());
+    std::vector<glm::dvec2> accelerations2(positions.size());
 
-    auto zipped = std::ranges::views::zip(positions, masses);
-    std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
-        return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
-    });
-    std::sort(positions.begin(), positions.end(), static_cast<bool(*)(const glm::dvec2&, const glm::dvec2&)>(cmp_zcurve_bitmagic));
+    for (std::size_t i=0; i<keys.size(); ++i) {
+        keys[i] = InterleaveHash::operator()(positions[i]);
+    }
+    auto zipped = std::ranges::views::zip(keys, positions, masses);
+    auto proj = [](const auto& v) { return std::get<0>(v); };
+
+    auto quadtree = build_quadtree(zipped, proj);
+    compute_acceleration_multipoles(quadtree, positions, masses, accelerations, 0.0, [](std::function<void()> func) {func(); return ready_future();});
+
     compute_acceleration_direct(positions, masses, accelerations_exepected);
-
-    auto cells = build_quadtree(positions);
-    compute_acceleration_multipoles(cells, positions, masses, accelerations, 0.0, [](std::function<void()> func) {func(); return ready_future();});
     for (int i=0; i<accelerations.size(); ++i) {
         assert(equal_approx(accelerations[i], accelerations_exepected[i], 1e-2));
     }

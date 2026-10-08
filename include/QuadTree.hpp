@@ -58,7 +58,7 @@ struct QuadTree {
         cells.emplace_back(std::move(value), coords, parent_idx, 0u, std::uint8_t{0}, static_cast<std::uint8_t>(parent.level+1));
         parent.children_count += 1;
         parent.children = static_cast<std::uint32_t>(cells.size()) - parent.children_count;
-        return cells.size()-1;
+        return static_cast<std::uint32_t>(cells.size()-1);
     }
 
     static constexpr bool is_parent(glm::uvec2 coords, std::size_t parent_level, glm::uvec2 parent) noexcept {
@@ -75,6 +75,6 @@ struct QuadTree {
         auto a_size = std::uint64_t(1) << (32-a_level);  // uint64_t so we don't overflow
         auto b_size = std::uint64_t(1) << (32-b_level);
 
-        return b.x <= a.x + a_size & b.y <= a.y + a_size & a.x <= b.x + b_size & a.y <= b.y + b_size;
+        return (b.x <= a.x + a_size) & (b.y <= a.y + a_size) & (a.x <= b.x + b_size) & (a.y <= b.y + b_size);
     }
 };

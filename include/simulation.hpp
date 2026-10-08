@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <bit>
 #include <functional>
 #include <future>
@@ -47,9 +48,49 @@ constexpr bool cmp_zcurve_bitmagic(const glm::vec<2, T, glm::defaultp>& lhs, con
     }
 }
 
-QuadTree<std::span<const glm::dvec2>> build_quadtree(std::span<const glm::dvec2> points, int max_points=1, int max_levels=31);
+template<typename Range, typename Proj>
+QuadTree<std::pair<std::uint32_t, std::uint32_t>> build_quadtree(Range points, Proj proj, std::uint32_t max_points=1, std::uint8_t max_levels=31) {
+    QuadTree<std::pair<std::uint32_t, std::uint32_t>> quadtree({ 0, points.size() });
+    quadtree.cells.reserve(2*points.size()/max_points);
+
+    for (std::uint32_t idx = 0; idx < quadtree.cells.size(); ++idx) {
+        if (quadtree.cells.capacity() < quadtree.cells.size()+4) {  // avoid reallocation when adding items in the loop
+            quadtree.cells.reserve(static_cast<std::size_t>(quadtree.cells.capacity()*1.5)+4);
+        }
+        auto& cell = quadtree.cells[idx];
+        if (cell.value.second-cell.value.first <= max_points || cell.level == max_levels) {
+            continue;
+        }
+
+        auto child_cell_size = 1u << (31-cell.level);
+        const auto child_cells_coords = {
+            cell.coords + glm::uvec2{child_cell_size, 0},
+            cell.coords + glm::uvec2{0, child_cell_size},
+            cell.coords + glm::uvec2{child_cell_size, child_cell_size},
+        };
+        auto prev_child_cell_coords = cell.coords;
+        auto begin = cell.value.first;
+        for (const auto& child_cell_coords: child_cells_coords) {
+            auto pivot_coords = interleave_bits(child_cell_coords.x, child_cell_coords.y);
+            auto tail = std::ranges::partition(points.begin()+begin, points.begin()+cell.value.second, [pivot_coords](std::uint64_t v){ return v < pivot_coords; }, proj);
+            auto end = static_cast<std::uint32_t>(tail.begin()-points.begin());
+            if (end != begin) {
+                assert(begin < end);
+                quadtree.add_cell({ begin, end }, prev_child_cell_coords, idx);
+                begin = end;
+            }
+            prev_child_cell_coords = child_cell_coords;
+        }
+        if (begin != cell.value.second) {
+            assert(begin < cell.value.second);
+            quadtree.add_cell({ begin, cell.value.second }, prev_child_cell_coords, idx);
+        }
+    }
+
+    return quadtree;
+}
 
 void compute_acceleration_direct(std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double eps=0.0);
 void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc, double eps=0.0);
 
-void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& cells, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps, std::function<std::future<void>(std::function<void()>)> submit_task);
+void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std::uint32_t>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps, std::function<std::future<void>(std::function<void()>)> submit_task);

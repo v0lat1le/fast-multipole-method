@@ -11,44 +11,6 @@
 #include "simulation.hpp"
 
 
-QuadTree<std::span<const glm::dvec2>> build_quadtree(std::span<const glm::dvec2> points, int max_points, int max_levels) {
-    QuadTree<std::span<const glm::dvec2>> quadtree(points);
-    quadtree.cells.reserve(2*points.size()/max_points);
-
-    for (std::size_t idx = 0; idx < quadtree.cells.size(); ++idx) {
-        if (quadtree.cells.capacity() < quadtree.cells.size()+4) {  // avoid reallocation when adding items in the loop
-            quadtree.cells.reserve(quadtree.cells.capacity()*1.5+4);
-        }
-        auto& parent = quadtree.cells[idx];
-        if (parent.value.size() <= max_points || parent.level == max_levels) {
-            continue;
-        }
-
-        auto begin = parent.value.begin();
-        auto child_cell_size = 1u << (31-parent.level);
-        const auto child_cells_coords = {
-            parent.coords + glm::uvec2{child_cell_size, 0},
-            parent.coords + glm::uvec2{0, child_cell_size},
-            parent.coords + glm::uvec2{child_cell_size, child_cell_size},
-        };
-        auto prev_child_cell_coords = parent.coords;
-        for (const auto& child_cell_coords: child_cells_coords) {
-            auto double_space_coords = glm::ldexp(glm::dvec2{child_cell_coords}, glm::ivec2{-32});
-            auto end = std::lower_bound(begin, parent.value.end(), double_space_coords, static_cast<bool(*)(const glm::dvec2&, const glm::dvec2&)>(cmp_zcurve_bitmagic));
-            if (begin != end) {
-                quadtree.add_cell({ begin, end }, prev_child_cell_coords, idx);
-                begin = end;
-            }
-            prev_child_cell_coords = child_cell_coords;
-        }
-        if (begin != parent.value.end()) {
-            quadtree.add_cell({ begin, parent.value.end() }, prev_child_cell_coords, idx);
-        }
-    }
-
-    return quadtree;
-}
-
 void compute_acceleration_direct(std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double eps) {
     for (std::size_t i=0; i<positions.size(); i++) {
         for (std::size_t j=i+1; j<positions.size(); j++) {
@@ -85,7 +47,7 @@ void compute_acceleration_multipole(glm::dvec2 src_pos, const Multipole<P>& mult
     }
 }
 
-void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps, std::function<std::future<void>(std::function<void()>)> submit_task) {
+void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std::uint32_t>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps, std::function<std::future<void>(std::function<void()>)> submit_task) {
     auto by_level_chunked = [&submit_task](const auto& cells, const auto& func) {
         std::size_t N = 16;
         auto levels = cells | std::views::chunk_by([](const auto& a, const auto& b) {
@@ -100,15 +62,14 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
             futures.clear();
         }
     };
-    
+
     auto multipoles = std::vector<Multipole<12>>(quadtree.cells.size());
     auto multipole_upward_pass = [&](std::uint32_t cell_idx) {
         auto& cell = quadtree.cells[cell_idx];
         auto this_cell_center = cell_center(cell.level, cell.coords);
         if (cell.children_count == 0) {
-            std::ptrdiff_t offset = cell.value.data() - positions.data();
-            for (int i=0; i<cell.value.size(); ++i) {
-                calculate_multipole<12>(masses[offset+i], multipoles[cell_idx], cell.value[i]-this_cell_center);
+            for (auto i=cell.value.first; i<cell.value.second; ++i) {
+                calculate_multipole<12>(masses[i], multipoles[cell_idx], positions[i]-this_cell_center);
             }
         } else {
             for (auto child_idx = cell.children; child_idx < cell.children + cell.children_count; ++child_idx) {
@@ -131,9 +92,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
         auto& cell = quadtree.cells[cell_idx];
         auto& neighbour = quadtree.cells[neighbour_idx];
         if (neighbour.children_count == 0) {
-            std::ptrdiff_t dst_offset = cell.value.data() - positions.data();
-            std::ptrdiff_t src_offset = neighbour.value.data() - positions.data();
-            compute_acceleration_direct(neighbour.value, masses.subspan(src_offset, neighbour.value.size()), cell.value, accelerations.subspan(dst_offset, cell.value.size()), direct_eps);
+            compute_acceleration_direct(positions.subspan(neighbour.value.first, neighbour.value.second-neighbour.value.first), masses.subspan(neighbour.value.first, neighbour.value.second-neighbour.value.first), positions.subspan(cell.value.first, cell.value.second-cell.value.first), accelerations.subspan(cell.value.first, cell.value.second-cell.value.first), direct_eps);
             return;
         }
         for (auto descendant_idx = neighbour.children; descendant_idx < neighbour.children+neighbour.children_count; ++descendant_idx) {
@@ -142,8 +101,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
                 recurse(cell_idx, descendant_idx, recurse);
             } else {
                 auto descendant_cell_center = cell_center(descendant.level, descendant.coords);
-                std::ptrdiff_t dst_offset = cell.value.data() - positions.data();
-                compute_acceleration_multipole(descendant_cell_center, multipoles[descendant_idx], cell.value, accelerations.subspan(dst_offset, cell.value.size()));
+                compute_acceleration_multipole(descendant_cell_center, multipoles[descendant_idx], positions.subspan(cell.value.first, cell.value.second-cell.value.first), accelerations.subspan(cell.value.first, cell.value.second-cell.value.first));
             }
         }
     };
@@ -153,8 +111,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
         auto& parent = quadtree.cells[cell.parent];
 
         if (cell.children_count == 0) {
-            std::ptrdiff_t dst_offset = cell.value.data() - positions.data();
-            compute_acceleration_direct(cell.value, masses.subspan(dst_offset, cell.value.size()), accelerations.subspan(dst_offset, cell.value.size()), direct_eps);
+            compute_acceleration_direct(positions.subspan(cell.value.first, cell.value.second-cell.value.first), masses.subspan(cell.value.first, cell.value.second-cell.value.first), accelerations.subspan(cell.value.first, cell.value.second-cell.value.first), direct_eps);
         }
 
         std::size_t neighbour_slot = 0;
@@ -188,7 +145,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
                 }
             } else {
                 auto this_cell_center = cell_center(cell.level, cell.coords);
-                for (auto point_idx=parent_neighbour.value.data() - positions.data(); point_idx<parent_neighbour.value.data() + parent_neighbour.value.size() - positions.data(); ++point_idx) {
+                for (auto point_idx=parent_neighbour.value.first; point_idx<parent_neighbour.value.second; ++point_idx) {
                     charge_to_local<12>(masses[point_idx], locals[cell_idx], positions[point_idx] - this_cell_center);
                 }
             }
@@ -203,7 +160,7 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
 
     auto local_expansion_down_pass = [&](std::uint32_t cell_idx) {
         auto& cell = quadtree.cells[cell_idx];
-        auto this_cell_center = cell_center(cell.level, cell.coords) ;
+        auto this_cell_center = cell_center(cell.level, cell.coords);
 
         auto& parent = quadtree.cells[cell.parent];
         auto parent_center = cell_center(parent.level, parent.coords);
@@ -211,8 +168,8 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
         translate_local(locals[cell.parent], locals[cell_idx], parent_center-this_cell_center);
 
         if (cell.children_count == 0) {
-            for (auto& p: cell.value) {
-                accelerations[&p - positions.data()] += evaluate_local(locals[cell_idx], p-this_cell_center);
+            for (auto point_idx=cell.value.first; point_idx<cell.value.second; ++point_idx) {
+                accelerations[point_idx] += evaluate_local(locals[cell_idx], positions[point_idx]-this_cell_center);
             }
         }
     };

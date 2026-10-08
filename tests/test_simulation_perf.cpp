@@ -12,15 +12,18 @@ template<typename T>
 void run_test(T& distribution, std::size_t n) {
     std::random_device rd;
     std::mt19937 gen(rd());
-    
+
+    std::vector<std::uint64_t> keys(n);
     std::vector<glm::dvec2> positions(n);
     std::vector<glm::dvec2> accelerations(n);
     std::vector<double> masses(n, 1.0);
     for (std::size_t i=0; i<positions.size(); ++i) {
         positions[i] = { distribution(gen), distribution(gen) };
+        keys[i] = InterleaveHash::operator()(positions[i]);
     }
-    std::sort(positions.begin(), positions.end(), static_cast<bool(*)(const glm::dvec2&, const glm::dvec2&)>(cmp_zcurve_bitmagic));
-    auto quadtree = build_quadtree(positions, 20);
+    auto zipped = std::ranges::views::zip(keys, positions, masses);
+    auto proj = [](const auto& v) { return std::get<0>(v); };
+    auto quadtree = build_quadtree(zipped, proj, 20);
 
     ThreadPool thread_pool(8);
 
