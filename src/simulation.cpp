@@ -48,20 +48,30 @@ void compute_acceleration_multipole(glm::dvec2 src_pos, const Multipole<P>& mult
 }
 
 void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std::uint32_t>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps, std::function<std::future<void>(std::function<void()>)> submit_task) {
-    auto by_level_chunked = [&submit_task](const auto& cells, const auto& func) {
-        std::size_t N = 16;
-        auto levels = cells | std::views::chunk_by([](const auto& a, const auto& b) {
-            return a.level == b.level;
-        });
+    auto parallel_for = [&submit_task](std::uint32_t begin, std::uint32_t end, auto&& func) {
+        auto size = end-begin;
+        auto chunk_base = size/8;
+        auto remainder = size%8;
         std::vector<std::future<void>> futures;
-        for (const auto& level: levels) {
-            for (const auto& chunk: level | std::views::chunk(N)) {
-                futures.push_back(submit_task([&func, chunk]() { func(chunk); }));
-            }
-            for (auto& f: futures) f.get();
-            futures.clear();
+        for (std::uint32_t i=0; i<8 and begin<end; ++i) {
+            auto chunk_end = begin + chunk_base + (i<remainder ? 1 : 0);
+            futures.push_back(submit_task([begin, chunk_end, &func]() {
+                for (auto j=begin; j<chunk_end; ++j) {
+                    func(j);
+                }
+            }));
+            begin = chunk_end;
         }
+        for (auto& f: futures) f.get();
     };
+
+    auto levels = std::vector<std::uint32_t>{1};
+    for (std::uint32_t i = 1; i<quadtree.cells.size(); ++i) {
+        if (quadtree.cells[i].level != quadtree.cells[levels.back()].level) {
+            levels.push_back(i);
+        }
+    }
+    levels.push_back(static_cast<std::uint32_t>(quadtree.cells.size()));
 
     auto multipoles = std::vector<Multipole<12>>(quadtree.cells.size());
     auto multipole_upward_pass = [&](std::uint32_t cell_idx) {
@@ -79,11 +89,11 @@ void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std
             }
         }
     };
-    by_level_chunked(quadtree.cells | std::views::drop(1) | std::views::reverse, [&quadtree, &multipole_upward_pass](const auto& chunk) {
-        for (const auto& cell: chunk) {
-            multipole_upward_pass(static_cast<std::uint32_t>(&cell - quadtree.cells.data()));
-        }
-    });
+    for (std::size_t i=levels.size()-1; i-->0; ) {
+        auto begin = levels[i];
+        auto end = levels[i+1];
+        parallel_for(begin, end, [&quadtree, &multipole_upward_pass](std::uint32_t cell_idx){ multipole_upward_pass(cell_idx); });
+    }
 
     auto locals = std::vector<Local<12>>(quadtree.cells.size());
     auto neighbours = std::vector<std::array<std::uint32_t, 8>>(quadtree.cells.size());
@@ -151,12 +161,11 @@ void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std
             }
         }
     };
-
-    by_level_chunked(quadtree.cells | std::views::drop(1), [&quadtree, &process_cell](const auto& chunk) {
-        for (const auto& cell: chunk) {
-            process_cell(static_cast<std::uint32_t>(&cell - quadtree.cells.data()));
-        }
-    });
+    for (std::size_t i=0; i<levels.size()-1; ++i) {
+        auto begin = levels[i];
+        auto end = levels[i+1];
+        parallel_for(begin, end, [&process_cell](std::uint32_t cell_idx) { process_cell(cell_idx); });
+    }
 
     auto local_expansion_down_pass = [&](std::uint32_t cell_idx) {
         auto& cell = quadtree.cells[cell_idx];
@@ -173,9 +182,9 @@ void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std
             }
         }
     };
-    by_level_chunked(quadtree.cells | std::views::drop(1), [&quadtree, &local_expansion_down_pass](const auto& chunk) {
-        for (const auto& cell: chunk) {
-            local_expansion_down_pass(static_cast<std::uint32_t>(&cell - quadtree.cells.data()));
-        }
-    });
+    for (std::size_t i=0; i<levels.size()-1; ++i) {
+        auto begin = levels[i];
+        auto end = levels[i+1];
+        parallel_for(begin, end, [&local_expansion_down_pass](std::uint32_t cell_idx) { local_expansion_down_pass(cell_idx); });
+    }
 }
