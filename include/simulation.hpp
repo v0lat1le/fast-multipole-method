@@ -1,6 +1,8 @@
 #pragma once
 
 #include <bit>
+#include <functional>
+#include <future>
 #include <span>
 
 #include "glm/vec2.hpp"
@@ -50,4 +52,4 @@ QuadTree<std::span<const glm::dvec2>> build_quadtree(std::span<const glm::dvec2>
 void compute_acceleration_direct(std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double eps=0.0);
 void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc, double eps=0.0);
 
-void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& cells, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps=0.0);
+void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& cells, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps, std::function<std::future<void>(std::function<void()>)> submit_task);

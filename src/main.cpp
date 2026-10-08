@@ -19,6 +19,7 @@
 
 #include "QuadTree.hpp"
 #include "simulation.hpp"
+#include "ThreadPool.hpp"
 
 
 void populate_system(std::span<glm::dvec2> positions, std::span<glm::dvec2> velocities, std::span<double> masses, double r=0.5) {
@@ -156,8 +157,9 @@ struct Simulation {
     std::vector<double> masses;
     std::vector<glm::dvec2> accelerations;
     QuadTree<std::span<const glm::dvec2>>quadtree;
+    ThreadPool thread_pool;
 
-    Simulation() : quadtree({}) {}
+    Simulation() : quadtree({}), thread_pool(8) {}
 
     void init() {
         for (std::size_t i=0; i<keys.size(); ++i) {
@@ -167,37 +169,11 @@ struct Simulation {
         std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
             return std::get<0>(lhs) < std::get<0>(rhs);
         });
-
-        //std::size_t bad = 0;
-        //for (std::size_t i=positions.size()-1; i>0; --i) {
-        //    for (std::size_t j=i-1; j>1; --j) {
-        //        auto dr = positions[i]-positions[j];
-        //        if (dr.x*dr.x + dr.y*dr.y > 1e-6) {
-        //            i = j-1;
-        //            break;
-        //        }
-        //        velocities[i] = (velocities[j]*masses[j] + velocities[i]*masses[i])/(masses[j]+masses[i]);
-        //        masses[i] += masses[j];
-        //        bad++;
-        //        std::swap(positions[j], positions[positions.size()-bad]);
-        //        std::swap(velocities[j], velocities[velocities.size()-bad]);
-        //        std::swap(masses[j], masses[masses.size()-bad]);
-        //    }
-        //}
-        //positions.resize(positions.size()-bad);
-        //velocities.resize(velocities.size()-bad);
-        //accelerations.resize(accelerations.size()-bad);
-        //masses.resize(masses.size()-bad);
-        //zipped = std::ranges::views::zip(positions, velocities, masses);
-        //std::ranges::sort(zipped, [](const auto& lhs, const auto& rhs) {
-        //    return cmp_zcurve_bitmagic(std::get<0>(lhs), std::get<0>(rhs));
-        //});
-
         quadtree = build_quadtree(positions, 20);
     }
 
     void update(double dt) {
-        compute_acceleration_multipoles(quadtree, positions, masses, accelerations, 1e-9);
+        compute_acceleration_multipoles(quadtree, positions, masses, accelerations, 1e-9, [this](std::function<void()> func) {return thread_pool.submit(func); });
         std::size_t out = 0;
         for (std::size_t i=0; i<positions.size();++i) {
             velocities[i] += accelerations[i]*dt;
@@ -239,7 +215,7 @@ int main(void) {
 #ifndef NDEBUG
     constexpr auto SIM_SIZE = 1000;
 #else
-    constexpr auto SIM_SIZE = 20000;
+    constexpr auto SIM_SIZE = 100000;
 #endif
     simulation.resize(SIM_SIZE);
     make_two_stars(simulation.positions, simulation.velocities, simulation.masses, 0.3);

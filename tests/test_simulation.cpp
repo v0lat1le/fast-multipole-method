@@ -89,6 +89,12 @@ bool equal_approx(glm::dvec2 a, glm::dvec2 b, double eps=1e-10) {
     return equal_approx(a.x, b.x, eps) && equal_approx(a.y, b.y, eps);
 }
 
+std::future<void> ready_future() {
+    std::promise<void> promise;
+    promise.set_value();
+    return promise.get_future();
+}
+
 void run_test(std::vector<glm::dvec2> positions, std::vector<double> masses) {
     std::vector<glm::dvec2> accelerations_exepected(positions.size());
     std::vector<glm::dvec2> accelerations(positions.size());
@@ -101,7 +107,7 @@ void run_test(std::vector<glm::dvec2> positions, std::vector<double> masses) {
     compute_acceleration_direct(positions, masses, accelerations_exepected);
 
     auto cells = build_quadtree(positions);
-    compute_acceleration_multipoles(cells, positions, masses, accelerations);
+    compute_acceleration_multipoles(cells, positions, masses, accelerations, 0.0, [](std::function<void()> func) {func(); return ready_future();});
     for (int i=0; i<accelerations.size(); ++i) {
         assert(equal_approx(accelerations[i], accelerations_exepected[i], 1e-2));
     }

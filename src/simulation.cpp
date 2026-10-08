@@ -1,9 +1,8 @@
 #include <algorithm>
-#include <barrier>
 #include <complex>
 #include <cmath>
-#include <mutex>
-#include <thread>
+#include <future>
+#include <ranges>
 
 #include "glm/geometric.hpp"
 
@@ -79,28 +78,6 @@ constexpr glm::dvec2 cell_center(std::uint8_t level, glm::uvec2 coords) noexcept
     return glm::ldexp(glm::dvec2{ coords | child_mask }, glm::ivec2{ -32 });
 }
 
-template <std::size_t P>
-std::vector<Multipole<P>> compute_multipoles(const QuadTree<std::span<const glm::dvec2>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses) {
-    auto multipoles = std::vector<Multipole<P>>(quadtree.cells.size());
-    for (std::size_t idx = quadtree.cells.size(); idx-- > 0;) {
-        auto& cell = quadtree.cells[idx];
-        auto this_cell_center = cell_center(cell.level, cell.coords);
-        if (cell.children_count == 0) {
-            std::ptrdiff_t offset = cell.value.data() - positions.data();
-            for (int i=0; i<cell.value.size(); ++i) {
-                calculate_multipole<P>(masses[offset+i], multipoles[idx], cell.value[i]-this_cell_center);
-            }
-        } else {
-            for (auto child_idx = cell.children; child_idx < cell.children + cell.children_count; ++child_idx) {
-                auto& child_mp = quadtree.cells[child_idx];
-                auto child_center = cell_center(child_mp.level, child_mp.coords);
-                translate_multipole(multipoles[child_idx], multipoles[idx], child_center-this_cell_center);
-            }
-        }
-    }
-    return multipoles;
-}
-
 template<std::size_t P>
 void compute_acceleration_multipole(glm::dvec2 src_pos, const Multipole<P>& multipole, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc) {
     for (std::size_t j=0; j<dst_pos.size(); j++) {
@@ -108,37 +85,22 @@ void compute_acceleration_multipole(glm::dvec2 src_pos, const Multipole<P>& mult
     }
 }
 
-void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps) {
-    std::vector<std::uint32_t> neighbour_storage;
-    std::vector<std::uint32_t> neighbours;
-    neighbours.emplace_back(0);
-    for (std::uint32_t cell_idx=1; cell_idx<quadtree.cells.size(); ++cell_idx) {
-        auto& cell = quadtree.cells[cell_idx];
-        auto& parent = quadtree.cells[cell.parent];
-        neighbours.emplace_back(neighbour_storage.size());
-        for (std::uint32_t sibling_idx=parent.children; sibling_idx<parent.children+parent.children_count; ++sibling_idx) {
-            if (sibling_idx != cell_idx) {
-                neighbour_storage.push_back(sibling_idx);
+void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps, std::function<std::future<void>(std::function<void()>)> submit_task) {
+    auto by_level_chunked = [&submit_task](const auto& cells, const auto& func) {
+        std::size_t N = 16;
+        auto levels = cells | std::views::chunk_by([](const auto& a, const auto& b) {
+            return a.level == b.level;
+        });
+        std::vector<std::future<void>> futures;
+        for (const auto& level: levels) {
+            for (const auto& chunk: level | std::views::chunk(N)) {
+                futures.push_back(submit_task([&func, chunk]() { func(chunk); }));
             }
+            for (auto& f: futures) f.get();
+            futures.clear();
         }
-        for (std::uint32_t parent_neighbour_idx=neighbours[cell.parent]; parent_neighbour_idx < neighbours[cell.parent+1]; ++parent_neighbour_idx) {
-            auto& parent_neighbour = quadtree.cells[neighbour_storage[parent_neighbour_idx]];
-            if (parent_neighbour.children_count == 0) {
-                if (quadtree.is_adjacent(cell.level, cell.coords, parent_neighbour.level, parent_neighbour.coords)) {
-                    neighbour_storage.push_back(neighbour_storage[parent_neighbour_idx]);
-                }
-            } else {
-                for (std::uint32_t cousin_idx=parent_neighbour.children; cousin_idx<parent_neighbour.children+parent_neighbour.children_count; ++cousin_idx) {
-                    auto& cousin = quadtree.cells[cousin_idx];
-                    if (quadtree.is_adjacent(cell.level, cell.coords, cousin.level, cousin.coords)) {
-                        neighbour_storage.push_back(cousin_idx);
-                    }
-                }
-            }
-        }
-    }
-    neighbours.emplace_back(neighbour_storage.size());
-
+    };
+    
     auto multipoles = std::vector<Multipole<12>>(quadtree.cells.size());
     auto multipole_upward_pass = [&](std::uint32_t cell_idx) {
         auto& cell = quadtree.cells[cell_idx];
@@ -156,98 +118,88 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
             }
         }
     };
+    by_level_chunked(quadtree.cells | std::views::drop(1) | std::views::reverse, [&quadtree, &multipole_upward_pass](const auto& chunk) {
+        for (const auto& cell: chunk) {
+            multipole_upward_pass(&cell - quadtree.cells.data());
+        }
+    });
 
-    {
-        std::barrier sync_point(6);
-        std::atomic<std::int64_t> next_cell = quadtree.cells.size()-1;
-        auto thread_func = [&]() {
-            int level = quadtree.cells[quadtree.cells.size() - 1].level;
-            while (true) {
-                auto cell_idx = next_cell.fetch_add(-1, std::memory_order_relaxed);
-                if (cell_idx < 0) {
-                    while (level >= 0) {
-                        sync_point.arrive_and_wait();
-                        --level;
-                    }
-                    return;
-                }
-                while (level > quadtree.cells[cell_idx].level) {
-                    sync_point.arrive_and_wait();
-                    --level;
-                }
-                multipole_upward_pass(cell_idx);
-            }
-        };
-        std::array<std::jthread, 6> threads;
-        for (int i=0; i<threads.size(); ++i) {
-            threads[i] = std::jthread{ thread_func };
-        };
-    }
+    auto locals = std::vector<Local<12>>(quadtree.cells.size());
+    auto neighbours = std::vector<std::array<std::uint32_t, 8>>(quadtree.cells.size());
 
-    auto process_neighbour = [&](std::uint32_t cell_idx, std::uint32_t neighbour_idx, auto& recurse){
+    auto process_neighbour = [&](std::uint32_t cell_idx, std::uint32_t neighbour_idx, auto& recurse) {
         auto& cell = quadtree.cells[cell_idx];
         auto& neighbour = quadtree.cells[neighbour_idx];
-        if (not quadtree.is_adjacent(neighbour.level, neighbour.coords, cell.level, cell.coords)) {
-            auto neighbour_cell_center = cell_center(neighbour.level, neighbour.coords);
-            std::ptrdiff_t dst_offset = cell.value.data() - positions.data();
-            compute_acceleration_multipole(neighbour_cell_center, multipoles[neighbour_idx], cell.value, accelerations.subspan(dst_offset, cell.value.size()));
-            return;
-        }
         if (neighbour.children_count == 0) {
             std::ptrdiff_t dst_offset = cell.value.data() - positions.data();
             std::ptrdiff_t src_offset = neighbour.value.data() - positions.data();
             compute_acceleration_direct(neighbour.value, masses.subspan(src_offset, neighbour.value.size()), cell.value, accelerations.subspan(dst_offset, cell.value.size()), direct_eps);
             return;
         }
-        for (auto neighbour_descendant_idx = neighbour.children; neighbour_descendant_idx < neighbour.children+neighbour.children_count; ++neighbour_descendant_idx) {
-            recurse(cell_idx, neighbour_descendant_idx, recurse);
+        for (auto descendant_idx = neighbour.children; descendant_idx < neighbour.children+neighbour.children_count; ++descendant_idx) {
+            auto& descendant = quadtree.cells[descendant_idx];
+            if (quadtree.is_adjacent(descendant.level, descendant.coords, cell.level, cell.coords)) {
+                recurse(cell_idx, descendant_idx, recurse);
+            } else {
+                auto descendant_cell_center = cell_center(descendant.level, descendant.coords);
+                std::ptrdiff_t dst_offset = cell.value.data() - positions.data();
+                compute_acceleration_multipole(descendant_cell_center, multipoles[descendant_idx], cell.value, accelerations.subspan(dst_offset, cell.value.size()));
+            }
         }
     };
 
-    auto locals = std::vector<Local<12>>(quadtree.cells.size());
-
     auto process_cell = [&](std::uint32_t cell_idx) {
         auto& cell = quadtree.cells[cell_idx];
+        auto& parent = quadtree.cells[cell.parent];
+
         if (cell.children_count == 0) {
             std::ptrdiff_t dst_offset = cell.value.data() - positions.data();
             compute_acceleration_direct(cell.value, masses.subspan(dst_offset, cell.value.size()), accelerations.subspan(dst_offset, cell.value.size()), direct_eps);
-            for (auto neighbour_idx=neighbours[cell_idx]; neighbour_idx < neighbours[cell_idx+1]; ++neighbour_idx) {
-                process_neighbour(cell_idx, neighbour_storage[neighbour_idx], process_neighbour);
+        }
+
+        std::size_t neighbour_slot = 0;
+        for (auto sibling_idx=parent.children; sibling_idx<parent.children+parent.children_count; ++sibling_idx) {
+            if (sibling_idx == cell_idx) continue;
+            neighbours[cell_idx][neighbour_slot++] = sibling_idx;
+            if (cell.children_count == 0) {
+                process_neighbour(cell_idx, sibling_idx, process_neighbour);
             }
         }
-        for (std::uint32_t parent_neighbour_idx=neighbours[cell.parent]; parent_neighbour_idx < neighbours[cell.parent+1]; ++parent_neighbour_idx) {
-            auto& parent_neighbour = quadtree.cells[neighbour_storage[parent_neighbour_idx]];
+        for (auto parent_neighbour_idx: neighbours[cell.parent]) {
+            if (parent_neighbour_idx == 0) break;
+            auto& parent_neighbour = quadtree.cells[parent_neighbour_idx];
             if (parent_neighbour.children_count > 0) {
-                for (auto cousin_idx = parent_neighbour.children; cousin_idx < parent_neighbour.children+parent_neighbour.children_count; ++cousin_idx) {
+                for (auto cousin_idx=parent_neighbour.children; cousin_idx<parent_neighbour.children+parent_neighbour.children_count; ++cousin_idx) {
                     auto& cousin = quadtree.cells[cousin_idx];
-                    if (not quadtree.is_adjacent(cell.level, cell.coords, cousin.level, cousin.coords)) {
+                    if (quadtree.is_adjacent(cell.level, cell.coords, cousin.level, cousin.coords)) {
+                        neighbours[cell_idx][neighbour_slot++] = cousin_idx;
+                        if (cell.children_count == 0) {
+                            process_neighbour(cell_idx, cousin_idx, process_neighbour);
+                        }
+                    } else {
                         auto dr = cell_center(cousin.level, cousin.coords) - cell_center(cell.level, cell.coords);
                         convert_to_local(multipoles[cousin_idx], locals[cell_idx], dr);
                     }
-                }            
-            } else if (not quadtree.is_adjacent(cell.level, cell.coords, parent_neighbour.level, parent_neighbour.coords)) {
+                }
+            } else if (quadtree.is_adjacent(cell.level, cell.coords, parent_neighbour.level, parent_neighbour.coords)) {
+                neighbours[cell_idx][neighbour_slot++] = parent_neighbour_idx;
+                if (cell.children_count == 0) {
+                    process_neighbour(cell_idx, parent_neighbour_idx, process_neighbour);
+                }
+            } else {
                 auto this_cell_center = cell_center(cell.level, cell.coords);
-                for (std::size_t point_idx=parent_neighbour.value.data() - positions.data(); point_idx<parent_neighbour.value.data() + parent_neighbour.value.size() - positions.data(); ++point_idx) {
+                for (auto point_idx=parent_neighbour.value.data() - positions.data(); point_idx<parent_neighbour.value.data() + parent_neighbour.value.size() - positions.data(); ++point_idx) {
                     charge_to_local<12>(masses[point_idx], locals[cell_idx], positions[point_idx] - this_cell_center);
                 }
             }
         }
     };
 
-    {
-        std::atomic<std::uint32_t> next_cell = 1;
-        auto thread_func = [&]() {
-            while (true) {
-                auto cell_idx = next_cell.fetch_add(1, std::memory_order_relaxed);
-                if (cell_idx >= quadtree.cells.size()) return;
-                process_cell(cell_idx);
-            }
-        };
-        std::array<std::jthread, 6> threads;
-        for (int i=0; i<threads.size(); ++i) {
-            threads[i] = std::jthread{ thread_func };
-        };
-    }
+    by_level_chunked(quadtree.cells | std::views::drop(1), [&quadtree, &process_cell](const auto& chunk) {
+        for (const auto& cell: chunk) {
+            process_cell(&cell - quadtree.cells.data());
+        }
+    });
 
     auto local_expansion_down_pass = [&](std::uint32_t cell_idx) {
         auto& cell = quadtree.cells[cell_idx];
@@ -264,32 +216,9 @@ void compute_acceleration_multipoles(const QuadTree<std::span<const glm::dvec2>>
             }
         }
     };
-
-    {
-        std::barrier sync_point(6);
-        std::atomic<std::uint32_t> next_cell = 1;
-        auto thread_func = [&]() {
-            std::uint8_t level = 0;
-            while (true) {
-                auto cell_idx = next_cell.fetch_add(1, std::memory_order_relaxed);
-                if (cell_idx >= quadtree.cells.size()) {
-                    auto last_level = quadtree.cells[quadtree.cells.size() - 1].level;
-                    while (level < last_level) {
-                        sync_point.arrive_and_wait();
-                        ++level;
-                    }
-                    return;
-                };
-                while (level < quadtree.cells[cell_idx].level) {
-                    sync_point.arrive_and_wait();
-                    ++level;
-                }
-                local_expansion_down_pass(cell_idx);
-            }
-        };
-        std::array<std::jthread, 6> threads;
-        for (int i=0; i<threads.size(); ++i) {
-            threads[i] = std::jthread{ thread_func };
-        };
-    }
+    by_level_chunked(quadtree.cells | std::views::drop(1), [&quadtree, &local_expansion_down_pass](const auto& chunk) {
+        for (const auto& cell: chunk) {
+            local_expansion_down_pass(&cell - quadtree.cells.data());
+        }
+    });
 }
