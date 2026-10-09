@@ -56,18 +56,15 @@ template <std::size_t P>
 constexpr glm::dvec2 evaluate_local(const Local<P>& local, glm::dvec2 dr) noexcept {
     double z_real = dr.x;
     double z_imag = dr.y;
-    double z_power_real = z_real;
-    double z_power_imag = z_imag;
-    auto accel_real = local[0].real();
-    auto accel_imag = local[0].imag();
-    for (std::size_t l=1; l<P; ++l) {
-        accel_real += (l+1.0)*(local[l].real()*z_power_real - local[l].imag()*z_power_imag);
-        accel_imag += (l+1.0)*(local[l].real()*z_power_imag + local[l].imag()*z_power_real);
-        double z_power_real_next = z_power_real*z_real - z_power_imag*z_imag;  // TODO: uneccesary mul on last iter
-        z_power_imag = z_power_real*z_imag + z_power_imag*z_real;
-        z_power_real = z_power_real_next;
+    double accel_real = (P+1.0)*local[P-1].real();
+    double accel_imag = (P+1.0)*local[P-1].imag();
+    for (std::size_t l=P-1; l-->1;) {
+        double tmp_real = accel_real + (l+1.0)*local[l].real();
+        double tmp_imag = accel_imag + (l+1.0)*local[l].imag();
+        accel_real = tmp_real*z_real - tmp_imag*z_imag;
+        accel_imag = tmp_real*z_imag + tmp_imag*z_real;
     }
-    return glm::dvec2{-accel_real, accel_imag};
+    return glm::dvec2{-accel_real-local[0].real(), accel_imag + local[0].imag()};
 }
 
 template <std::size_t P>
