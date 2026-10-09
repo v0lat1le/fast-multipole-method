@@ -22,7 +22,7 @@ void run_test(T& distribution, std::size_t n) {
     }
     auto zipped = std::ranges::views::zip(keys, positions, masses);
     auto proj = [](const auto& v) { return std::get<0>(v); };
-    auto quadtree = build_quadtree(zipped, proj, 20);
+    auto quadtree = build_quadtree(zipped, proj, 40);
 
     for (std::size_t i=0; i<10; ++i) {
         std::chrono::time_point start = std::chrono::steady_clock::now();

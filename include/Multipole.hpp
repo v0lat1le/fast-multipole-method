@@ -165,7 +165,7 @@ constexpr void convert_to_local(const Multipole<P>& multipole, Local<P>& local, 
         z_power_real[k] = z_power_real[k-1]*inv_real - z_power_imag[k-1]*inv_imag;
         z_power_imag[k] = z_power_real[k-1]*inv_imag + z_power_imag[k-1]*inv_real;
     }
-    convert_to_local(multipole, local, z_power_real, z_power_imag);
+    convert_to_local<P>(multipole, local, z_power_real, z_power_imag);
 }
 
 template <std::size_t P>

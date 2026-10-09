@@ -166,7 +166,7 @@ struct Simulation {
         }
         auto zipped = std::ranges::views::zip(keys, positions, velocities, masses);
         auto proj = [](const auto& v) { return std::get<0>(v); };
-        quadtree = build_quadtree(zipped, proj, 20);
+        quadtree = build_quadtree(zipped, proj, 40);
     }
 
     void update(double dt) {

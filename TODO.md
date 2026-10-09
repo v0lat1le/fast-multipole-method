@@ -1,8 +1,10 @@
 # FMM TODO
 
 ### To Do
-- [ ] optimization - precompute z powers (fixed number of distances between cells per level)
-- [ ] optimization - combine operations by type to benefit from matrix-matrix multiplication
+- [ ] optimization - parallel tree build
+- [ ] optimization - precompute z powers for M2M and L2L passes
+- [ ] optimization - 3-4 blocks per thread in for_each(par)
+- [ ] optimization - near field vectorize
 - [ ] add instrumentation
 - [ ] move/zoom field of view
 - [ ] render text (instrumentation, help, etc)
