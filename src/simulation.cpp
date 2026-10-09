@@ -24,8 +24,8 @@ constexpr glm::dvec2 cell_center(std::uint8_t level, glm::uvec2 coords) noexcept
 template<std::size_t P>
 struct M2LDrPowerTable {
     struct Powers {
-        double z_power_real[P];
-        double z_power_imag[P];
+        std::array<double, P> z_power_real;
+        std::array<double, P> z_power_imag;
     };
     Powers powers[30][49];
 
