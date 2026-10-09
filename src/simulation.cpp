@@ -65,6 +65,40 @@ struct M2LDrPowerTable {
     }
 };
 
+
+template<std::size_t P>
+struct M2MDrPowerTable {
+    struct Powers {
+        std::array<double, P> z_power_real;
+        std::array<double, P> z_power_imag;
+    };
+    Powers powers[32][4];
+
+    M2MDrPowerTable() {
+        for (std::uint8_t level=0; level<32; ++level) {
+            double d = std::ldexp(1, -2-level);
+            glm::dvec2 coordses[] = {glm::dvec2(-d, -d), glm::dvec2(d, -d), glm::dvec2(-d, d), glm::dvec2(d, d)};
+            for (std::size_t idx=0; idx<4; ++idx) {
+                powers[level][idx].z_power_real[0] = 1.0;
+                powers[level][idx].z_power_real[1] = coordses[idx].x;
+                powers[level][idx].z_power_imag[0] = 0.0;
+                powers[level][idx].z_power_imag[1] = coordses[idx].y;
+                for (std::size_t k=2; k<P; ++k) {
+                    powers[level][idx].z_power_real[k] = powers[level][idx].z_power_real[k-1]*coordses[idx].x - powers[level][idx].z_power_imag[k-1]*coordses[idx].y;
+                    powers[level][idx].z_power_imag[k] = powers[level][idx].z_power_real[k-1]*coordses[idx].y + powers[level][idx].z_power_imag[k-1]*coordses[idx].x;
+                }
+            }
+        }
+    }
+
+    const Powers& get_m2m_powers(std::uint8_t level, glm::uvec2 dst_coords) const noexcept {
+        assert(level > 1);
+        assert(level < 31);
+        auto idx = ((dst_coords.x >> (32u-level)) & 1) | ((dst_coords.y >> (31u-level)) & 2);
+        return powers[level-1][idx];
+    }
+};
+
 void compute_acceleration_direct(std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double eps) {
     for (std::size_t i=0; i<positions.size(); i++) {
         auto accel_i = glm::dvec2{0.0, 0.0};
@@ -99,6 +133,7 @@ void compute_acceleration_multipole(glm::dvec2 src_pos, const Multipole<P>& mult
 
 void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std::uint32_t>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps) {
     static const auto m2l_dr_power_table = M2LDrPowerTable<12>();
+    static const auto m2m_dr_power_table = M2MDrPowerTable<12+1>();
 
     auto levels = std::vector<std::uint32_t>{1};
     for (std::uint32_t i = 1; i<quadtree.cells.size(); ++i) {
@@ -119,8 +154,8 @@ void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std
         } else {
             for (auto child_idx = cell.children; child_idx < cell.children + cell.children_count; ++child_idx) {
                 auto& child_mp = quadtree.cells[child_idx];
-                auto child_center = cell_center(child_mp.level, child_mp.coords);
-                translate_multipole(multipoles[child_idx], multipoles[cell_idx], child_center-this_cell_center);
+                auto& powers = m2m_dr_power_table.get_m2m_powers(child_mp.level, child_mp.coords);
+                translate_multipole(multipoles[child_idx], multipoles[cell_idx], powers.z_power_real, powers.z_power_imag);
             }
         }
     };

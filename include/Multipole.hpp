@@ -89,15 +89,9 @@ struct Binomial {
 };
 
 template <std::size_t P>
-constexpr void translate_multipole(const Multipole<P>& multipole, Multipole<P>& dst, glm::dvec2 dr) noexcept {
+constexpr void translate_multipole(const Multipole<P>& multipole, Multipole<P>& dst, std::span<const double, P+1> z_power_real, std::span<const double, P+1> z_power_imag) noexcept {
     static constexpr auto binoms = Binomial<P>();
-    double z_power_real[P+1] = {1.0, dr.x};
-    double z_power_imag[P+1] = {0.0, dr.y};
-    for (std::size_t k=2; k<P+1; ++k) {
-        z_power_real[k] = z_power_real[k-1]*z_power_real[1] - z_power_imag[k-1]*z_power_imag[1];
-        z_power_imag[k] = z_power_real[k-1]*z_power_imag[1] + z_power_imag[k-1]*z_power_real[1];
-    }
-    for (std::size_t l=0; l<P; ++l) {  // TODO: try loops other way
+    for (std::size_t l=0; l<P; ++l) {
         auto& o = reinterpret_cast<double(&)[2]>(dst.a[l]);
         double v = -multipole.q/(l+1.0);
         o[0] += v*z_power_real[l+1];
@@ -110,6 +104,17 @@ constexpr void translate_multipole(const Multipole<P>& multipole, Multipole<P>& 
         }
     }
     dst.q += multipole.q;
+}
+
+template <std::size_t P>
+constexpr void translate_multipole(const Multipole<P>& multipole, Multipole<P>& dst, glm::dvec2 dr) noexcept {
+    double z_power_real[P+1] = {1.0, dr.x};
+    double z_power_imag[P+1] = {0.0, dr.y};
+    for (std::size_t k=2; k<P+1; ++k) {
+        z_power_real[k] = z_power_real[k-1]*z_power_real[1] - z_power_imag[k-1]*z_power_imag[1];
+        z_power_imag[k] = z_power_real[k-1]*z_power_imag[1] + z_power_imag[k-1]*z_power_real[1];
+    }
+    translate_multipole<P>(multipole, dst, z_power_real, z_power_imag);
 }
 
 template <std::size_t P>
