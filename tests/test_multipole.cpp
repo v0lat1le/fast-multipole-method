@@ -25,7 +25,7 @@ TEST_CASE(test_calculate_and_evaluate_multipole) {
     Multipole<32> multipole{};
     calculate_multipole(charge, multipole, glm::dvec2{});
     assert(multipole.q == charge);
-    for (int i=0; i<multipole.a.size(); ++i) {
+    for (std::size_t i=0; i<multipole.a.size(); ++i) {
         assert(multipole.a[i] == 0.0);
     }
 
