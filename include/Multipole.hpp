@@ -133,7 +133,7 @@ struct M2L {
 };
 
 template <std::size_t P>
-constexpr void convert_to_local(const Multipole<P>& multipole, Local<P>& local, double z_power_real[P], double z_power_imag[P]) noexcept {
+constexpr void convert_to_local(const Multipole<P>& multipole, Local<P>& local, const double z_power_real[P], const double z_power_imag[P]) noexcept {
     static constexpr auto coefficients = M2L<P>();
     // not computing or storing b0 as it doesn't contribute to the force
     double bs_real[P] = {};

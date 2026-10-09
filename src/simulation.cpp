@@ -11,6 +11,60 @@
 #include "simulation.hpp"
 
 
+constexpr glm::dvec2 cell_corner(glm::uvec2 coords) noexcept {
+    return glm::ldexp(glm::dvec2{ coords }, glm::ivec2{ -32 });
+}
+
+constexpr glm::dvec2 cell_center(std::uint8_t level, glm::uvec2 coords) noexcept {
+    assert(level < 32);
+    auto child_mask = 1u << (31-level);
+    return cell_corner(coords | child_mask);
+}
+
+template<std::size_t P>
+struct M2LDrPowerTable {
+    struct Powers {
+        double z_power_real[P];
+        double z_power_imag[P];
+    };
+    Powers powers[30][49];
+
+    M2LDrPowerTable() {
+        for (std::uint8_t level=0; level<30; ++level) {
+            auto center_coords = glm::uvec2{ 3, 3 };
+            auto center_coords_d = glm::ldexp(glm::dvec2{ center_coords }, glm::ivec2{ -2-level });
+            for (std::uint32_t y=0; y<7; ++y) {
+                for (std::uint32_t x=0; x<7; ++x) {
+                    if (x == 3 and y == 3) continue;
+                    auto target_coords = glm::uvec2{ x, y };
+                    auto idx = y*7+x;
+                    auto target_coords_d = glm::ldexp(glm::dvec2{ target_coords }, glm::ivec2{ -2-level });
+                    auto dr = target_coords_d - center_coords_d;
+                    double d = dr.x*dr.x + dr.y*dr.y;
+                    double inv_real = dr.x/d;
+                    double inv_imag = -dr.y/d;
+                    powers[level][idx].z_power_real[0] = inv_real;
+                    powers[level][idx].z_power_imag[0] = inv_imag;
+                    for (std::size_t k=1; k<P; ++k) {
+                        powers[level][idx].z_power_real[k] = powers[level][idx].z_power_real[k-1]*inv_real - powers[level][idx].z_power_imag[k-1]*inv_imag;
+                        powers[level][idx].z_power_imag[k] = powers[level][idx].z_power_real[k-1]*inv_imag + powers[level][idx].z_power_imag[k-1]*inv_real;
+                    }
+                }
+            }
+        }
+    }
+
+    const Powers& get_powers(std::uint8_t level, glm::uvec2 src_coords, glm::uvec2 dst_coords) const noexcept {
+        assert(level > 1);
+        assert(level < 32);
+        auto src_coords_local = (src_coords>>(32u-level));
+        auto dst_coords_local = (dst_coords>>(32u-level));
+        auto coords = (glm::uvec2{ 3, 3 } + src_coords_local) - dst_coords_local;
+        auto idx = coords.y*7 + coords.x;
+        return powers[level-2][idx];
+    }
+};
+
 void compute_acceleration_direct(std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double eps) {
     for (std::size_t i=0; i<positions.size(); i++) {
         auto accel_i = glm::dvec2{0.0, 0.0};
@@ -36,12 +90,6 @@ void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<
     }
 }
 
-constexpr glm::dvec2 cell_center(std::uint8_t level, glm::uvec2 coords) noexcept {
-    assert(level < 32);
-    auto child_mask = 1u << (31-level);
-    return glm::ldexp(glm::dvec2{ coords | child_mask }, glm::ivec2{ -32 });
-}
-
 template<std::size_t P>
 void compute_acceleration_multipole(glm::dvec2 src_pos, const Multipole<P>& multipole, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc) {
     for (std::size_t j=0; j<dst_pos.size(); j++) {
@@ -50,6 +98,7 @@ void compute_acceleration_multipole(glm::dvec2 src_pos, const Multipole<P>& mult
 }
 
 void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std::uint32_t>>& quadtree, std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double direct_eps, std::function<std::future<void>(std::function<void()>)> submit_task) {
+    static const auto m2l_dr_power_table = M2LDrPowerTable<12>();
     auto parallel_for = [&submit_task](std::uint32_t begin, std::uint32_t end, auto&& func) {
         auto size = end-begin;
         auto chunk_base = size/8;
@@ -94,7 +143,7 @@ void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std
     for (std::size_t i=levels.size()-1; i-->0; ) {
         auto begin = levels[i];
         auto end = levels[i+1];
-        parallel_for(begin, end, [&quadtree, &multipole_upward_pass](std::uint32_t cell_idx){ multipole_upward_pass(cell_idx); });
+        parallel_for(begin, end, [&multipole_upward_pass](std::uint32_t cell_idx){ multipole_upward_pass(cell_idx); });
     }
 
     auto locals = std::vector<Local<12>>(quadtree.cells.size());
@@ -146,8 +195,8 @@ void compute_acceleration_multipoles(const QuadTree<std::pair<std::uint32_t, std
                             process_neighbour(cell_idx, cousin_idx, process_neighbour);
                         }
                     } else {
-                        auto dr = cell_center(cousin.level, cousin.coords) - cell_center(cell.level, cell.coords);
-                        convert_to_local(multipoles[cousin_idx], locals[cell_idx], dr);
+                        auto& powers = m2l_dr_power_table.get_powers(cell.level, cousin.coords, cell.coords); 
+                        convert_to_local<12>(multipoles[cousin_idx], locals[cell_idx], powers.z_power_real, powers.z_power_imag);
                     }
                 }
             } else if (quadtree.is_adjacent(cell.level, cell.coords, parent_neighbour.level, parent_neighbour.coords)) {
