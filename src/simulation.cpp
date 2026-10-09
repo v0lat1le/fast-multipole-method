@@ -65,7 +65,6 @@ struct M2LDrPowerTable {
     }
 };
 
-
 template<std::size_t P>
 struct M2MDrPowerTable {
     struct Powers {
@@ -112,7 +111,7 @@ void compute_acceleration_direct(std::span<const glm::dvec2> positions, std::spa
     }
 }
 
-void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc, double eps) {
+void compute_acceleration_direct_simple(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc, double eps) {
     for (std::size_t j=0; j<dst_pos.size(); j++) {
         glm::dvec2 acc{};
         for (std::size_t i=0; i<src_pos.size(); i++) {
@@ -122,6 +121,71 @@ void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<
         }
         dst_acc[j] += acc;
     }
+}
+
+void compute_acceleration_direct_unrolled(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc, double eps) {
+    constexpr std::size_t BLOCK = 64;
+    for (std::size_t j0=0; j0<dst_pos.size(); j0+=BLOCK) {
+        std::size_t n = std::min(BLOCK, dst_pos.size()-j0);
+        double tx[BLOCK], ty[BLOCK], ax[BLOCK], ay[BLOCK];
+        for (std::size_t j=0; j<n; ++j) {
+            tx[j] = dst_pos[j0+j].x;
+            ty[j] = dst_pos[j0+j].y;
+            ax[j] = 0.0;
+            ay[j] = 0.0;
+        }
+        for (std::size_t i=0; i<src_pos.size(); ++i) {
+            const double sx = src_pos[i].x;
+            const double sy = src_pos[i].y;
+            const double m = src_mass[i];
+            for (std::size_t j=0; j<n; ++j) {
+                double dx = tx[j] - sx;
+                double dy = ty[j] - sy;
+                double s = m / (dx*dx + dy*dy + eps);
+                ax[j] -= dx*s;
+                ay[j] -= dy*s;
+            }
+        }
+        for (std::size_t j=0; j<n; ++j) {
+            dst_acc[j0+j].x += ax[j];
+            dst_acc[j0+j].y += ay[j];
+        }
+    }
+}
+
+void compute_acceleration_direct_unrolled_float(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc, float eps) {
+    constexpr std::size_t BLOCK = 64;
+    const auto ref = dst_pos[0];
+    for (std::size_t j0=0; j0<dst_pos.size(); j0+=BLOCK) {
+        std::size_t n = std::min(BLOCK, dst_pos.size()-j0);
+        float tx[BLOCK], ty[BLOCK], ax[BLOCK], ay[BLOCK];
+        for (std::size_t j=0; j<n; ++j) {
+            tx[j] = dst_pos[j0+j].x - ref.x;
+            ty[j] = dst_pos[j0+j].y - ref.y;
+            ax[j] = 0.0;
+            ay[j] = 0.0;
+        }
+        for (std::size_t i=0; i<src_pos.size(); ++i) {
+            const float sx = src_pos[i].x - ref.x;
+            const float sy = src_pos[i].y - ref.y;
+            const float m = src_mass[i];
+            for (std::size_t j=0; j<n; ++j) {
+                float dx = tx[j] - sx;
+                float dy = ty[j] - sy;
+                float s = m / (dx*dx + dy*dy + eps);
+                ax[j] -= dx*s;
+                ay[j] -= dy*s;
+            }
+        }
+        for (std::size_t j=0; j<n; ++j) {
+            dst_acc[j0+j].x += ax[j];
+            dst_acc[j0+j].y += ay[j];
+        }
+    }
+}
+
+void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc, double eps) {
+    compute_acceleration_direct_unrolled_float(src_pos, src_mass, dst_pos, dst_acc, eps);
 }
 
 template<std::size_t P>
