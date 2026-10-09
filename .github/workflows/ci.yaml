@@ -17,7 +17,7 @@ jobs:
             workflow: debug_gcc
           - os: macos-26
             compiler: clang-21
-            workflow: debug_clang
+            workflow: debug_gcc
 
     steps:
       - name: Install apt packages

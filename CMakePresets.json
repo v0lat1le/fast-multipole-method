@@ -1,4 +1,4 @@
-{
+﻿{
   "version": 8,
   "configurePresets": [
     {
@@ -19,17 +19,15 @@
       }
     },
     {
-      "name": "debug_clang",
-      "inherits": "debug_base",
-      "cacheVariables": {
-        "CMAKE_CXX_FLAGS": "-Wall -Wextra -Wpedantic -fsanitize=address,undefined"
-      }
-    },
-    {
       "name": "debug_msvc",
       "inherits": "debug_base",
       "cacheVariables": {
         "CMAKE_CXX_FLAGS": "/EHsc /W4"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
       }
     }
   ],
@@ -37,10 +35,6 @@
     {
       "name": "debug_gcc",
       "configurePreset": "debug_gcc"
-    },
-    {
-      "name": "debug_clang",
-      "configurePreset": "debug_clang"
     },
     {
       "name": "debug_msvc",
@@ -51,10 +45,6 @@
     {
       "name": "debug_gcc",
       "configurePreset": "debug_gcc"
-    },
-    {
-      "name": "debug_clang",
-      "configurePreset": "debug_clang"
     },
     {
       "name": "debug_msvc",
@@ -76,23 +66,6 @@
         {
           "type": "test",
           "name": "debug_gcc"
-        }
-      ]
-    },
-    {
-      "name": "debug_clang",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "debug_clang"
-        },
-        {
-          "type": "build",
-          "name": "debug_clang"
-        },
-        {
-          "type": "test",
-          "name": "debug_clang"
         }
       ]
     },
