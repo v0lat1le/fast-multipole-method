@@ -13,12 +13,14 @@
 
 void compute_acceleration_direct(std::span<const glm::dvec2> positions, std::span<const double> masses, std::span<glm::dvec2> accelerations, double eps) {
     for (std::size_t i=0; i<positions.size(); i++) {
+        auto accel_i = glm::dvec2{0.0, 0.0};
         for (std::size_t j=i+1; j<positions.size(); j++) {
             auto dr = positions[j] - positions[i];
-            auto d2 = glm::dot(dr, dr) + eps;
-            accelerations[i] += dr*masses[j]/d2;
-            accelerations[j] -= dr*masses[i]/d2;
+            auto d2_inv = 1.0 / (glm::dot(dr, dr) + eps);
+            accel_i += dr*(masses[j]*d2_inv);
+            accelerations[j] -= dr*(masses[i]*d2_inv);
         }
+        accelerations[i] += accel_i;
     }
 }
 
