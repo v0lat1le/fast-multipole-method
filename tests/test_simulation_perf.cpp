@@ -5,7 +5,6 @@
 
 #include "grtest.h"
 #include "simulation.hpp"
-#include "ThreadPool.hpp"
 
 
 template<typename T>
@@ -25,11 +24,9 @@ void run_test(T& distribution, std::size_t n) {
     auto proj = [](const auto& v) { return std::get<0>(v); };
     auto quadtree = build_quadtree(zipped, proj, 20);
 
-    ThreadPool thread_pool(8);
-
     for (std::size_t i=0; i<10; ++i) {
         std::chrono::time_point start = std::chrono::steady_clock::now();
-        compute_acceleration_multipoles(quadtree, positions, masses, accelerations, 1e-9, [&thread_pool](std::function<void()> func){return thread_pool.submit(func);});
+        compute_acceleration_multipoles(quadtree, positions, masses, accelerations, 1e-9);
         std::chrono::time_point stop = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
         std::cout << "Time taken: " << duration.count() << " μs" << std::endl;

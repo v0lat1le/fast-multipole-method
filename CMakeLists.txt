@@ -8,6 +8,8 @@ option(FMM_RENDERER "Renderer to use: opengl/vulkan" "default")
 # External libs
 set(EXTERNAL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external)
 
+add_subdirectory(${EXTERNAL_DIR}/poolstl)
+
 add_library(external_glm INTERFACE)
 add_library(external::glm ALIAS external_glm)
 target_include_directories(external_glm INTERFACE ${EXTERNAL_DIR}/glm)
@@ -17,7 +19,7 @@ target_compile_definitions(external_glm INTERFACE GLM_FORCE_MESSAGES GLM_FORCE_I
 # Core
 add_executable (fast_multipole_method "src/main.cpp" "src/simulation.cpp")
 target_include_directories(fast_multipole_method PRIVATE "include" ${EXTERNAL_DIR}/rgfw ${EXTERNAL_DIR}/glad/include)
-target_link_libraries(fast_multipole_method PRIVATE external::glm)
+target_link_libraries(fast_multipole_method PRIVATE external::glm poolSTL::poolSTL)
 if(WIN32)
 	if(${FMM_RENDERER} STREQUAL vulkan)
 		find_package (Vulkan 1.4.335 REQUIRED)
@@ -62,7 +64,7 @@ add_subdirectory(${EXTERNAL_DIR}/grtest)
 
 add_executable(test_simulation "tests/test_simulation.cpp" "src/simulation.cpp")
 target_include_directories(test_simulation PRIVATE "include")
-target_link_libraries(test_simulation PRIVATE grtest external::glm)
+target_link_libraries(test_simulation PRIVATE grtest external::glm poolSTL::poolSTL)
 grtest_discover_tests(test_simulation)
 
 add_executable(test_quadtree "tests/test_quadtree.cpp")
@@ -77,5 +79,5 @@ grtest_discover_tests(test_multipole)
 
 add_executable(test_simulation_perf "tests/test_simulation_perf.cpp" "src/simulation.cpp")
 target_include_directories(test_simulation_perf PRIVATE "include")
-target_link_libraries(test_simulation_perf PRIVATE grtest external::glm)
+target_link_libraries(test_simulation_perf PRIVATE grtest external::glm poolSTL::poolSTL)
 grtest_discover_tests(test_simulation_perf)

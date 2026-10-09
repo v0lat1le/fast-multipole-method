@@ -1,4 +1,4 @@
-#include <algorithm>
+﻿#include <algorithm>
 #include <cmath>
 #include <random>
 #include <ranges>
@@ -19,7 +19,6 @@
 
 #include "QuadTree.hpp"
 #include "simulation.hpp"
-#include "ThreadPool.hpp"
 
 
 void populate_system(std::span<glm::dvec2> positions, std::span<glm::dvec2> velocities, std::span<double> masses, double r=0.5) {
@@ -158,9 +157,8 @@ struct Simulation {
     std::vector<double> masses;
     std::vector<glm::dvec2> accelerations;
     QuadTree<std::pair<std::uint32_t, std::uint32_t>>quadtree;
-    ThreadPool thread_pool;
 
-    Simulation() : quadtree({}), thread_pool(8) {}
+    Simulation() : quadtree({}) {}
 
     void init() {
         for (std::size_t i=0; i<keys.size(); ++i) {
@@ -172,7 +170,7 @@ struct Simulation {
     }
 
     void update(double dt) {
-        compute_acceleration_multipoles(quadtree, positions, masses, accelerations, 1e-9, [this](std::function<void()> func) {return thread_pool.submit(func); });
+        compute_acceleration_multipoles(quadtree, positions, masses, accelerations, 1e-9);
         std::size_t out = 0;
         for (std::size_t i=0; i<positions.size();++i) {
             velocities[i] += accelerations[i]*dt;
