@@ -27,6 +27,8 @@ auto vkGetThings(F func, Args&&... args) {
 
 struct Renderer {
     bool display_quadtree = false;
+    float zoom = 1.0f;
+    glm::vec2 center = {0.0, 0.0};
 
     RGFW_window* window;
     VkInstance instance;
@@ -378,6 +380,8 @@ struct Renderer {
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
         int mode = 0;
+        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 16+3*sizeof(float), sizeof(float), &zoom);
+        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 32, 2*sizeof(float), &center);
         if (n_lines) {
             VkDeviceAddress lines_data = shader_data+n_points*sizeof(glm::vec2)+n_points*sizeof(float);
             vkCmdSetPrimitiveTopology(command_buffer, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
@@ -385,7 +389,7 @@ struct Renderer {
             float lines_color[3] = {0.0, 0.0, 0.6};
             vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 16, 3*sizeof(float), lines_color);
             mode = 1;
-            vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 16+3*sizeof(float), sizeof(int), &mode);
+            vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 32+2*sizeof(float), sizeof(int), &mode);
             vkCmdDraw(command_buffer, n_lines, 1, 0, 0);
         }
 
@@ -396,7 +400,7 @@ struct Renderer {
         float points_color[3] = { 1.0f, 1.0f, 1.0f };
         vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 16, 3*sizeof(float), points_color);
         mode = 0;
-        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 16+3*sizeof(float), sizeof(int), &mode);
+        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 32+2*sizeof(float), sizeof(int), &mode);
         vkCmdDraw(command_buffer, n_points, 1, 0, 0);
         vkCmdEndRendering(command_buffer);
 

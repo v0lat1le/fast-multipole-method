@@ -2,6 +2,8 @@ struct ShaderData {
 	float2* pos;
 	float* mass;
 	float3 color;
+	float zoom;
+	float2 center;
 	int mode;
 };
 
@@ -14,7 +16,7 @@ struct VertexOutput {
 [shader("vertex")]
 VertexOutput vertMain(uint vertex_index : SV_VertexID, uniform ShaderData data) {
     VertexOutput output;
-    output.sv_position = float4(data.pos[vertex_index]*2.0-1.0, 0.0, 1.0);
+    output.sv_position = float4((data.pos[vertex_index]-data.center)*data.zoom, 0.0, 1.0);
     output.color = data.color;
 	if (data.mode == 0) {
 	    output.pointSize = clamp(2.0*sqrt(data.mass[vertex_index]), 1.0, 10.0);

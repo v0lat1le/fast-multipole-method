@@ -64,7 +64,6 @@ void run_test(std::vector<glm::dvec2> positions, std::vector<double> masses) {
     std::vector<std::uint64_t> keys(positions.size());
     std::vector<glm::dvec2> accelerations_exepected(positions.size());
     std::vector<glm::dvec2> accelerations(positions.size());
-    std::vector<glm::dvec2> accelerations2(positions.size());
 
     for (std::size_t i=0; i<keys.size(); ++i) {
         keys[i] = morton_code(positions[i]);

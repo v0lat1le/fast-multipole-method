@@ -216,9 +216,10 @@ int main(void) {
     constexpr auto SIM_SIZE = 100000;
 #endif
     simulation.resize(SIM_SIZE);
-    make_two_stars(simulation.positions, simulation.velocities, simulation.masses, 0.3);
+    make_two_stars(simulation.positions, simulation.velocities, simulation.masses, 0.15);
     simulation.init();
 
+    auto mouse_pos = glm::vec2{};
     bool step_once = false;
     int steps = 0;
 
@@ -235,6 +236,8 @@ int main(void) {
     RGFW_window_setExitKey(window, RGFW_keyEscape);
 
     Renderer renderer(window);
+    renderer.zoom = 2.0;
+    renderer.center = {0.5, 0.5};
 
     while (RGFW_window_shouldClose(window) == RGFW_FALSE) {
         RGFW_event event;
@@ -256,7 +259,7 @@ int main(void) {
             }
             if (event.type == RGFW_keyPressed and event.key.value == RGFW_key1 and not event.key.repeat) {
                 simulation.resize(SIM_SIZE);
-                make_two_stars(simulation.positions, simulation.velocities, simulation.masses, 0.3);
+                make_two_stars(simulation.positions, simulation.velocities, simulation.masses, 0.15);
                 simulation.init();
             }
             if (event.type == RGFW_keyPressed and event.key.value == RGFW_key2 and not event.key.repeat) {
@@ -266,8 +269,25 @@ int main(void) {
             }
             if (event.type == RGFW_keyPressed and event.key.value == RGFW_key3 and not event.key.repeat) {
                 simulation.resize(SIM_SIZE);
-                make_disk(simulation.positions, simulation.velocities, simulation.masses, 0.4);
+                make_disk(simulation.positions, simulation.velocities, simulation.masses, 0.3);
                 simulation.init();
+            }
+            if (event.type == RGFW_mouseScroll) {
+                if (event.delta.y < 0) {
+                    renderer.zoom /= 1.25;
+                } else {
+                    renderer.zoom *= 1.25;
+                }
+            }
+            if (event.type == RGFW_mouseButtonPressed and event.button.value == RGFW_mouseLeft and event.mouse.inWindow) {
+                std::int32_t x,y;
+                RGFW_window_getMouse(window, &x, &y);
+                mouse_pos = glm::vec2{ x, y };
+            }
+            if (event.type == RGFW_mouseMotion and event.mouse.inWindow and RGFW_isMouseDown(RGFW_mouseLeft)) {
+                auto new_mouse_pos = glm::vec2{event.mouse.x, event.mouse.y};
+                renderer.center += (mouse_pos-new_mouse_pos)/glm::vec2{window->w, window->h}*(2.0f/renderer.zoom);
+                mouse_pos = new_mouse_pos;
             }
         }
 

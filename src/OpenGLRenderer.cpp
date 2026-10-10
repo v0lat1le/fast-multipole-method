@@ -1,6 +1,8 @@
 struct Renderer {
-	RGFW_window* window;
     bool display_quadtree = false;
+    float zoom = 1.0f;
+    glm::vec2 center = { 0.0f, 0.0f };
+	RGFW_window* window;
     unsigned int pointsArrayObject, pointsBufferObject, quadTreeArrayObject, quadTreeBufferObject;
     unsigned int shaderProgram;
     int colorUniformLocation;
