@@ -48,7 +48,12 @@
     },
     {
       "name": "debug_msvc",
-      "configurePreset": "debug_msvc"
+      "configurePreset": "debug_msvc",
+      "filter": {
+        "exclude": {
+          "name": "test_simulation_perf.*"
+        }
+      }
     }
   ],
   "workflowPresets": [
