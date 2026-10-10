@@ -6,48 +6,12 @@
 #include "simulation.hpp"
 
 
-template<typename T>
-void test_cmp_zcurve() {
-    for (uint32_t x1=0; x1<8; ++x1) {
-        for (uint32_t y1=0; y1<8; ++y1) {
-            for (uint32_t x2=0; x2<8; ++x2) {
-                for (uint32_t y2=0; y2<8; ++y2) {
-                    auto interleave = cmp_zcurve_interleave(glm::uvec2{ x1, y1 }, glm::uvec2{ x2, y2 });
-                    auto bit_magic = cmp_zcurve_bitmagic(glm::vec<2, T, glm::defaultp>{ static_cast<T>(x1), static_cast<T>(y1) }, glm::vec<2, T, glm::defaultp>{ static_cast<T>(x2), static_cast<T>(y2) });
-                    assert(interleave == bit_magic);
-                }
-            }
-        }
-    }
-}
-
-TEST_CASE(test_cmp_zcurve) {
-    test_cmp_zcurve<uint32_t>();
-    test_cmp_zcurve<double>();
-}
-
-TEST_CASE(test_cmp_zcurve_points) {
-    auto v1 = glm::dvec2{ 0.75, 0.5 };
-    auto v2 = glm::dvec2{ 0.69, 0.66 };
-    auto v1i = glm::uvec2{static_cast<uint32_t>(std::ldexp(v1.x, 32)), static_cast<uint32_t>(std::ldexp(v1.y, 32)) };
-    auto v2i = glm::uvec2{ static_cast<uint32_t>(std::ldexp(v2.x, 32)), static_cast<uint32_t>(std::ldexp(v2.y, 32)) };
-    
-    auto c1 = cmp_zcurve_bitmagic(v1, v2);
-    auto c2 = cmp_zcurve_interleave(v1i, v2i);
-    assert (c1 == c2);
-
-    auto c3 = cmp_zcurve_bitmagic(v2, v1);
-    auto c4 = cmp_zcurve_interleave(v2i, v1i);
-    assert(c3 == c4);
-    assert(c1 == not c3);
-}
-
 void check_quadtree(std::vector<glm::dvec2>& points) {
     std::vector<std::uint64_t> keys(points.size());
     for (std::size_t i=0; i<points.size(); ++i) {
-        keys[i] = InterleaveHash::operator()(points[i]);
+        keys[i] = morton_code(points[i]);
     }
-    auto zipped = std::ranges::views::zip(keys, points);
+    auto zipped = std::views::zip(keys, points);
     auto proj = [](const auto& v) { return std::get<0>(v); };
 
     auto quadtree = build_quadtree(zipped, proj);
@@ -88,26 +52,6 @@ TEST_CASE(test_build_quadtree_random) {
     }
 }
 
-TEST_CASE(test_build_quadtree2_random) {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<double> distrib(0, 1);
-
-    std::vector<glm::dvec2> positions(1000);
-    std::vector<std::uint64_t> keys(1000);
-    for (int k=0; k<10; ++k) {
-        for (std::size_t i=0; i<positions.size(); ++i) {
-            positions[i] = glm::dvec2{ distrib(gen), distrib(gen) };
-            keys[i] = InterleaveHash::operator()(positions[i]);
-        }
-        auto zipped = std::ranges::views::zip(keys, positions);
-        auto proj = [](const std::tuple<std::uint64_t, glm::dvec2>& v) {
-            return std::get<0>(v);
-        };
-        auto quadtree = build_quadtree(zipped, proj);
-    }
-}
-
 bool equal_approx(double a, double b, double eps=1e-10) {
     return std::abs(a - b) <= eps;
 }
@@ -123,9 +67,9 @@ void run_test(std::vector<glm::dvec2> positions, std::vector<double> masses) {
     std::vector<glm::dvec2> accelerations2(positions.size());
 
     for (std::size_t i=0; i<keys.size(); ++i) {
-        keys[i] = InterleaveHash::operator()(positions[i]);
+        keys[i] = morton_code(positions[i]);
     }
-    auto zipped = std::ranges::views::zip(keys, positions, masses);
+    auto zipped = std::views::zip(keys, positions, masses);
     auto proj = [](const auto& v) { return std::get<0>(v); };
 
     auto quadtree = build_quadtree(zipped, proj);

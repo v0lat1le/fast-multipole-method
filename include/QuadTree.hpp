@@ -24,15 +24,13 @@ constexpr std::uint64_t interleave_bits(std::uint32_t x, std::uint32_t y) noexce
     return spread_bits(x) | (spread_bits(y) << 1);
 }
 
-struct InterleaveHash {
-    static constexpr std::uint64_t operator()(const glm::uvec2& v) noexcept {
-        return interleave_bits(v.x, v.y);
-    }
+constexpr std::uint64_t morton_code(const glm::uvec2& v) noexcept {
+    return interleave_bits(v.x, v.y);
+}
 
-    static constexpr std::uint64_t operator()(const glm::dvec2& v) noexcept {
-        return interleave_bits(static_cast<std::uint32_t>(std::ldexp(v.x, 32)), static_cast<std::uint32_t>(std::ldexp(v.y, 32)));
-    }
-};
+constexpr std::uint64_t morton_code(const glm::dvec2& v) noexcept {
+    return interleave_bits(static_cast<std::uint32_t>(std::ldexp(v.x, 32)), static_cast<std::uint32_t>(std::ldexp(v.y, 32)));
+}
 
 template<typename T>
 struct QuadTree {
@@ -55,9 +53,9 @@ struct QuadTree {
         assert(parent.level < 31);
         assert(is_parent(coords, parent.level, parent.coords));
         assert(parent.children_count == 0 || parent.children+parent.children_count == cells.size());
-        cells.emplace_back(std::move(value), coords, parent_idx, 0u, std::uint8_t{0}, static_cast<std::uint8_t>(parent.level+1));
         parent.children_count += 1;
-        parent.children = static_cast<std::uint32_t>(cells.size()) - parent.children_count;
+        parent.children = static_cast<std::uint32_t>(cells.size()) + 1 - parent.children_count;
+        cells.emplace_back(std::move(value), coords, parent_idx, 0u, std::uint8_t{0}, static_cast<std::uint8_t>(parent.level+1));
         return static_cast<std::uint32_t>(cells.size()-1);
     }
 

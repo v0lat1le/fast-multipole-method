@@ -1,89 +1,77 @@
 #pragma once
 
 #include <algorithm>
-#include <bit>
 #include <span>
 
 #include "glm/vec2.hpp"
+#include "poolstl/poolstl.hpp"
 
 #include "QuadTree.hpp"
 
-
-constexpr bool cmp_zcurve_interleave(const glm::uvec2& lhs, const glm::uvec2& rhs) noexcept {
-    return interleave_bits(lhs.x, lhs.y) < interleave_bits(rhs.x, rhs.y);
-}
-
-template <typename T>
-constexpr int msb_diff(T a, T b) noexcept {
-    if constexpr (std::is_unsigned_v<T>) {
-        return std::numeric_limits<T>::digits-1-std::countl_zero(a^b);
-    }
-    if constexpr (std::is_same_v<T, float> or std::is_same_v<T, double>) {
-        using FloatAsUInt = std::conditional_t<std::is_same_v<T, float>, std::uint32_t, uint64_t>;
-        constexpr auto mantissa_size = std::numeric_limits<T>::digits-1;
-        constexpr auto mantissa_mask = (FloatAsUInt(1)<<mantissa_size)-1;
-        auto a_bits = std::bit_cast<FloatAsUInt>(a);
-        auto b_bits = std::bit_cast<FloatAsUInt>(b);
-        auto a_exponent = a_bits >> mantissa_size;
-        auto b_exponent = b_bits >> mantissa_size;
-
-        if (a_exponent == b_exponent) {
-            return static_cast<int>(a_exponent + msb_diff(a_bits & mantissa_mask, b_bits & mantissa_mask) - mantissa_size);
-        } else if (b_exponent < a_exponent) {
-            return static_cast<int>(a_exponent);
-        } else {
-            return static_cast<int>(b_exponent);
-        }
-    }
-}
-
-template<typename T>
-constexpr bool cmp_zcurve_bitmagic(const glm::vec<2, T, glm::defaultp>& lhs, const glm::vec<2, T, glm::defaultp>& rhs) noexcept {
-    if (msb_diff(lhs.y, rhs.y) < msb_diff(lhs.x, rhs.x)) {
-        return lhs.x < rhs.x;
-    } else {
-        return lhs.y < rhs.y;
-    }
-}
 
 template<typename Range, typename Proj>
 QuadTree<std::pair<std::uint32_t, std::uint32_t>> build_quadtree(Range points, Proj proj, std::uint32_t max_points=1, std::uint8_t max_levels=31) {
     QuadTree<std::pair<std::uint32_t, std::uint32_t>> quadtree({ 0u, static_cast<std::uint32_t>(points.size()) });
     quadtree.cells.reserve(2*points.size()/max_points);
 
-    for (std::uint32_t idx = 0; idx < quadtree.cells.size(); ++idx) {
-        if (quadtree.cells.capacity() < quadtree.cells.size()+4) {  // avoid reallocation when adding items in the loop
-            quadtree.cells.reserve(static_cast<std::size_t>(quadtree.cells.capacity()*1.5)+4);
-        }
-        auto& cell = quadtree.cells[idx];
-        if (cell.value.second-cell.value.first <= max_points || cell.level == max_levels) {
-            continue;
+    std::atomic<std::uint32_t> children_start(1);
+
+    auto process_cell = [&](uint32_t cell_idx, bool parallel) {
+        auto& cell = quadtree.cells[cell_idx];
+        auto begin_idx = cell.value.first;
+        auto end_idx = cell.value.second;
+        if (end_idx - begin_idx <= max_points || cell.level == max_levels) {
+            return;
         }
 
         auto child_cell_size = 1u << (31-cell.level);
-        const auto child_cells_coords = {
+        const glm::uvec2 child_cells_coords[] = {
+            cell.coords,
             cell.coords + glm::uvec2{child_cell_size, 0},
             cell.coords + glm::uvec2{0, child_cell_size},
             cell.coords + glm::uvec2{child_cell_size, child_cell_size},
         };
-        auto prev_child_cell_coords = cell.coords;
-        auto begin = cell.value.first;
-        for (const auto& child_cell_coords: child_cells_coords) {
-            auto pivot_coords = interleave_bits(child_cell_coords.x, child_cell_coords.y);
-            auto tail = std::ranges::partition(points.begin()+begin, points.begin()+cell.value.second, [pivot_coords](std::uint64_t v){ return v < pivot_coords; }, proj);
-            auto end = static_cast<std::uint32_t>(tail.begin()-points.begin());
-            if (end != begin) {
-                assert(begin < end);
-                quadtree.add_cell({ begin, end }, prev_child_cell_coords, idx);
-                begin = end;
-            }
-            prev_child_cell_coords = child_cell_coords;
+#ifdef _MSC_VER
+#define parallel_partition(...) std::partition(poolstl::par_if(parallel), __VA_ARGS__)
+#else  // std::partition doesn't like std::view::zip on gcc/clang
+#define parallel_partition(...) std::ranges::partition(__VA_ARGS__).begin()
+#endif
+        auto half_2 = parallel_partition(points.begin()+begin_idx, points.begin()+end_idx, [pivot_coords=morton_code(child_cells_coords[2]), &proj](const auto& v) { return proj(v) < pivot_coords; });
+        auto quarter_2 = parallel_partition(points.begin()+begin_idx, half_2, [pivot_coords=morton_code(child_cells_coords[1]), &proj](const auto& v) { return proj(v) < pivot_coords; });
+        auto quarter_4 = parallel_partition(half_2, points.begin()+end_idx, [pivot_coords=morton_code(child_cells_coords[3]), &proj](const auto& v) { return proj(v) < pivot_coords; });
+#undef parallel_partition
+        auto half_2_idx = static_cast<std::uint32_t>(half_2-points.begin());
+        auto quarter_2_idx = static_cast<std::uint32_t>(quarter_2-points.begin());
+        auto quarter_4_idx = static_cast<std::uint32_t>(quarter_4-points.begin());
+
+        cell.children_count = (begin_idx != quarter_2_idx) + (quarter_2_idx != half_2_idx) + (half_2_idx != quarter_4_idx) + (quarter_4_idx != end_idx);
+        cell.children = children_start.fetch_add(cell.children_count, std::memory_order_relaxed);
+        auto child_idx = cell.children;
+        if (begin_idx != quarter_2_idx) {
+            quadtree.cells[child_idx++] = { { begin_idx, quarter_2_idx }, child_cells_coords[0], cell_idx, 0u, std::uint8_t{ 0 }, static_cast<std::uint8_t>(cell.level+1) };
         }
-        if (begin != cell.value.second) {
-            assert(begin < cell.value.second);
-            quadtree.add_cell({ begin, cell.value.second }, prev_child_cell_coords, idx);
+        if (quarter_2_idx != half_2_idx) {
+            quadtree.cells[child_idx++] = { { quarter_2_idx, half_2_idx }, child_cells_coords[1], cell_idx, 0u, std::uint8_t{ 0 }, static_cast<std::uint8_t>(cell.level+1) };
         }
+        if (half_2_idx != quarter_4_idx) {
+            quadtree.cells[child_idx++] = { { half_2_idx, quarter_4_idx }, child_cells_coords[2], cell_idx, 0u, std::uint8_t{ 0 }, static_cast<std::uint8_t>(cell.level+1) };
+        }
+        if (quarter_4_idx != end_idx) {
+            quadtree.cells[child_idx++] = { { quarter_4_idx, end_idx }, child_cells_coords[3], cell_idx, 0u, std::uint8_t{ 0 }, static_cast<std::uint8_t>(cell.level+1) };
+        }
+    };
+
+    std::uint32_t level_start = 0;
+    std::uint32_t level_end = 1;
+    while(level_start < level_end) {
+        quadtree.cells.resize(children_start + (level_end-level_start)*4);
+        auto range = std::views::iota(level_start, level_end);
+        bool parallel_partition = range.size()<5;
+        std::for_each(poolstl::par_if(range.size() > 1), range.begin(), range.end(), [&process_cell, parallel_partition](std::uint32_t cell_idx) { process_cell(cell_idx, parallel_partition); });
+        level_start = level_end;
+        level_end = children_start;
     }
+    quadtree.cells.resize(children_start);
 
     return quadtree;
 }

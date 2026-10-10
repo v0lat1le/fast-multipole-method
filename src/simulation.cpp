@@ -4,7 +4,6 @@
 #include <ranges>
 
 #include "glm/geometric.hpp"
-#include "poolstl/poolstl.hpp"
 
 #include "QuadTree.hpp"
 #include "Multipole.hpp"
@@ -91,8 +90,8 @@ struct M2MDrPowerTable {
     }
 
     const Powers& get_m2m_powers(std::uint8_t level, glm::uvec2 dst_coords) const noexcept {
-        assert(level > 1);
-        assert(level < 31);
+        assert(level > 0);
+        assert(level < 32);
         auto idx = ((dst_coords.x >> (32u-level)) & 1) | ((dst_coords.y >> (31u-level)) & 2);
         return powers[level-1][idx];
     }
@@ -160,15 +159,15 @@ void compute_acceleration_direct_unrolled_float(std::span<const glm::dvec2> src_
         std::size_t n = std::min(BLOCK, dst_pos.size()-j0);
         float tx[BLOCK], ty[BLOCK], ax[BLOCK], ay[BLOCK];
         for (std::size_t j=0; j<n; ++j) {
-            tx[j] = dst_pos[j0+j].x - ref.x;
-            ty[j] = dst_pos[j0+j].y - ref.y;
-            ax[j] = 0.0;
-            ay[j] = 0.0;
+            tx[j] = static_cast<float>(dst_pos[j0+j].x - ref.x);
+            ty[j] = static_cast<float>(dst_pos[j0+j].y - ref.y);
+            ax[j] = 0.0f;
+            ay[j] = 0.0f;
         }
         for (std::size_t i=0; i<src_pos.size(); ++i) {
-            const float sx = src_pos[i].x - ref.x;
-            const float sy = src_pos[i].y - ref.y;
-            const float m = src_mass[i];
+            const float sx = static_cast<float>(src_pos[i].x - ref.x);
+            const float sy = static_cast<float>(src_pos[i].y - ref.y);
+            const float m = static_cast<float>(src_mass[i]);
             for (std::size_t j=0; j<n; ++j) {
                 float dx = tx[j] - sx;
                 float dy = ty[j] - sy;
@@ -185,7 +184,7 @@ void compute_acceleration_direct_unrolled_float(std::span<const glm::dvec2> src_
 }
 
 void compute_acceleration_direct(std::span<const glm::dvec2> src_pos, std::span<const double> src_mass, std::span<const glm::dvec2> dst_pos, std::span<glm::dvec2> dst_acc, double eps) {
-    compute_acceleration_direct_unrolled_float(src_pos, src_mass, dst_pos, dst_acc, eps);
+    compute_acceleration_direct_unrolled_float(src_pos, src_mass, dst_pos, dst_acc, static_cast<float>(eps));
 }
 
 template<std::size_t P>

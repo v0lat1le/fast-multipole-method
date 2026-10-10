@@ -139,7 +139,7 @@ std::vector<glm::vec2> quadtree_lines(const QuadTree<T>& cells, int max_level=7)
     for (auto& cell: cells.cells) {
         if (cell.level > max_level) continue;
         glm::vec2 p = glm::ldexp(glm::dvec2(cell.coords), glm::ivec2{-32});
-        float cell_size = std::ldexp(1.0, -static_cast<int>(cell.level));
+        float cell_size = std::ldexp(1.0f, -static_cast<int>(cell.level));
         lineVertices.insert(lineVertices.end(), {
             p, p+glm::vec2{cell_size, 0},
             p+glm::vec2{cell_size, 0}, p+cell_size,
@@ -161,10 +161,11 @@ struct Simulation {
     Simulation() : quadtree({}) {}
 
     void init() {
-        for (std::size_t i=0; i<keys.size(); ++i) {
-            keys[i] = InterleaveHash::operator()(positions[i]);
-        }
-        auto zipped = std::ranges::views::zip(keys, positions, velocities, masses);
+        auto range = std::views::iota(0u, static_cast<std::uint32_t>(positions.size()));
+        std::for_each(poolstl::par, range.begin(), range.end(), [&](std::uint32_t j) {
+            keys[j] = morton_code(positions[j]);
+        });
+        auto zipped = std::views::zip(keys, positions, velocities, masses);
         auto proj = [](const auto& v) { return std::get<0>(v); };
         quadtree = build_quadtree(zipped, proj, 40);
     }
