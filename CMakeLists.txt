@@ -28,14 +28,13 @@ if(WIN32)
 		function (target_add_slang_shaders TARGET)
 			cmake_parse_arguments ("SHADER" "" "" "SOURCES" ${ARGN})
 			set (SHADERS_DIR shaders)
-			set (ENTRY_POINTS -entry vertMain -entry fragMain)
 			add_custom_command (
 					OUTPUT ${SHADERS_DIR}
 					COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADERS_DIR}
 			)
 			add_custom_command (
 					OUTPUT  ${SHADERS_DIR}/slang.spv
-					COMMAND ${SLANGC_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS} -o slang.spv
+					COMMAND ${SLANGC_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -o slang.spv
 					WORKING_DIRECTORY ${SHADERS_DIR}
 					DEPENDS ${SHADERS_DIR} ${SHADER_SOURCES}
 					COMMENT "Compiling Slang Shaders"

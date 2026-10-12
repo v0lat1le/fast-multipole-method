@@ -7,6 +7,8 @@ struct ShaderData {
 	int mode;
 };
 
+[[vk::binding(0, 0)]] ConstantBuffer<ShaderData> data;
+
 struct VertexOutput {
     float3 color;
     float4 sv_position : SV_Position;
@@ -14,7 +16,7 @@ struct VertexOutput {
 };
 
 [shader("vertex")]
-VertexOutput vertMain(uint vertex_index : SV_VertexID, uniform ShaderData data) {
+VertexOutput vertMain(uint vertex_index : SV_VertexID) {
     VertexOutput output;
     output.sv_position = float4((data.pos[vertex_index]-data.center)*data.zoom, 0.0, 1.0);
     output.color = data.color;
