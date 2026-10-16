@@ -96,4 +96,7 @@ struct Renderer {
 
 		RGFW_window_swapBuffers_OpenGL(window);
     }
+
+    void add_text(glm::uvec2 pos, std::string str) {
+	}
 };

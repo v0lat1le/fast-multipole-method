@@ -4,12 +4,12 @@ template<typename F>
 struct extract_vulkan_type;
 template<typename R, typename... Args>
 struct extract_vulkan_type<R(VKAPI_CALL*)(Args...)> {
-    using type = typename std::tuple_element<sizeof...(Args)-1, std::tuple<Args...>>::type;
+    using type = std::tuple_element_t<sizeof...(Args)-1, std::tuple<Args...>>;
 };
 
 template<typename F, typename... Args>
 auto vkGetThing(F func, Args&&... args) {
-    using T = std::remove_pointer<typename extract_vulkan_type<F>::type>::type;
+    using T = std::remove_pointer_t<typename extract_vulkan_type<F>::type>;
     T result;
     func(std::forward<Args>(args)..., &result);
     return result;
@@ -19,7 +19,7 @@ template<typename F, typename... Args>
 auto vkGetThings(F func, Args&&... args) {
     std::uint32_t count{};
     func(std::forward<Args>(args)..., &count, nullptr);
-    using T = std::remove_pointer<typename extract_vulkan_type<F>::type>::type;
+    using T = std::remove_pointer_t<typename extract_vulkan_type<F>::type>;
     std::vector<T> result(count);
     func(std::forward<Args>(args)..., &count, result.data());
     return result;
@@ -55,6 +55,11 @@ struct Renderer {
     std::vector<VkFence> in_flight_fences;
 
     PFN_vkCmdPushDataEXT vkCmdPushDataEXT;
+    PFN_vkWriteResourceDescriptorsEXT vkWriteResourceDescriptorsEXT;
+    PFN_vkWriteSamplerDescriptorsEXT vkWriteSamplerDescriptorsEXT;
+    PFN_vkCmdBindResourceHeapEXT vkCmdBindResourceHeapEXT;
+    PFN_vkCmdBindSamplerHeapEXT vkCmdBindSamplerHeapEXT;
+    PFN_vkCmdCopyMemoryToImageKHR vkCmdCopyMemoryToImageKHR;
 
     struct GpuMemory {
         std::byte* cpu;
@@ -64,8 +69,21 @@ struct Renderer {
     };
     GpuMemory working_memory;
 
+    // texture stuff
+    VkPhysicalDeviceDescriptorHeapPropertiesEXT heap_properties{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_HEAP_PROPERTIES_EXT };
+    VkImage font_image;
+    VkDeviceMemory font_image_memory;
+    GpuMemory descriptor_heap;
+
+    // text
+    std::vector<std::pair<glm::uvec2, std::string>> text;
+
+    void add_text(glm::uvec2 pos, std::string str) {
+        text.emplace_back(pos, str);
+    }
+
     void create_instance() {
-        VkApplicationInfo app_info{
+        const VkApplicationInfo app_info{
             .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
             .pApplicationName = "FMM",
             .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
@@ -75,35 +93,35 @@ struct Renderer {
         };
 
         std::size_t extension_count = 0;
-        auto requred_extensions = RGFW_getRequiredInstanceExtensions_Vulkan(&extension_count);
-        VkInstanceCreateInfo instace_info{
+        auto required_extensions = RGFW_getRequiredInstanceExtensions_Vulkan(&extension_count);
+        VkInstanceCreateInfo instance_info{
             .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
             .pApplicationInfo = &app_info,
             .enabledLayerCount = 0,
             .ppEnabledLayerNames = nullptr,
             .enabledExtensionCount = static_cast<std::uint32_t>(extension_count),
-            .ppEnabledExtensionNames = requred_extensions,
+            .ppEnabledExtensionNames = required_extensions,
         };
 #ifndef NDEBUG
-        auto validationLayers = std::to_array({ "VK_LAYER_KHRONOS_validation" });
-        instace_info.enabledLayerCount = validationLayers.size();
-        instace_info.ppEnabledLayerNames = validationLayers.data();
+        auto validation_layers = std::to_array({ "VK_LAYER_KHRONOS_validation" });
+        instance_info.enabledLayerCount = validation_layers.size();
+        instance_info.ppEnabledLayerNames = validation_layers.data();
 #endif
-        if (vkCreateInstance(&instace_info, nullptr, &instance) != VK_SUCCESS) {
+        if (vkCreateInstance(&instance_info, nullptr, &instance) != VK_SUCCESS) {
             throw std::runtime_error("failed to create instance!");
         }
     }
 
     void create_device() {
-        std::uint32_t physicalDevices = 1;
-        vkEnumeratePhysicalDevices(instance, &physicalDevices, &physical_device);
+        auto devices = vkGetThings(vkEnumeratePhysicalDevices, instance);
+        physical_device = devices.front();
 
         auto properties = vkGetThings(vkGetPhysicalDeviceQueueFamilyProperties, physical_device);
         auto graphics_family = std::find_if(properties.begin(), properties.end(), [](auto& prop) { return prop.queueFlags & VK_QUEUE_GRAPHICS_BIT; });
 
         float priority = 0.5;
         queue_family_index = std::distance(properties.begin(), graphics_family);
-        VkDeviceQueueCreateInfo queue_info{ 
+        const VkDeviceQueueCreateInfo queue_info{
             .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
             .queueFamilyIndex = queue_family_index,
             .queueCount = 1,
@@ -162,7 +180,7 @@ struct Renderer {
             VK_KHR_DEVICE_ADDRESS_COMMANDS_EXTENSION_NAME,
             VK_KHR_UNIFIED_IMAGE_LAYOUTS_EXTENSION_NAME
         });
-        VkDeviceCreateInfo device_info {
+        const VkDeviceCreateInfo device_info {
             .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
             .pNext = &features_core,
             .queueCreateInfoCount = 1,
@@ -172,16 +190,23 @@ struct Renderer {
         };
         vkCreateDevice(physical_device, &device_info, nullptr, &device);
 
-        vkCmdPushDataEXT = reinterpret_cast<PFN_vkCmdPushDataEXT>(vkGetDeviceProcAddr(device, "vkCmdPushDataEXT"));
-
+#define load_device_proc_addr(device, method) reinterpret_cast<PFN_##method>(vkGetDeviceProcAddr(device, #method));
+        vkCmdPushDataEXT = load_device_proc_addr(device, vkCmdPushDataEXT);
+        vkWriteResourceDescriptorsEXT = load_device_proc_addr(device, vkWriteResourceDescriptorsEXT);
+        vkWriteSamplerDescriptorsEXT = load_device_proc_addr(device, vkWriteSamplerDescriptorsEXT);
+        vkCmdBindSamplerHeapEXT = load_device_proc_addr(device, vkCmdBindSamplerHeapEXT);
+        vkCmdBindResourceHeapEXT = load_device_proc_addr(device, vkCmdBindResourceHeapEXT);
+        vkCmdCopyMemoryToImageKHR = load_device_proc_addr(device, vkCmdCopyMemoryToImageKHR);
+#undef load_device_proc_addr
         vkGetDeviceQueue(device, queue_family_index, 0, &graphics_queue);
     }
 
-    void create_swapchain() {
-        auto surfaceFormats = vkGetThings(vkGetPhysicalDeviceSurfaceFormatsKHR, physical_device, surface);
-        auto surfaceCapabilities = vkGetThing(vkGetPhysicalDeviceSurfaceCapabilitiesKHR, physical_device, surface);
 
-        VkSwapchainCreateInfoKHR swapchain_info{ 
+    void create_swapchain() {
+        auto surface_formats = vkGetThings(vkGetPhysicalDeviceSurfaceFormatsKHR, physical_device, surface);
+        auto surface_capabilities = vkGetThing(vkGetPhysicalDeviceSurfaceCapabilitiesKHR, physical_device, surface);
+
+        const VkSwapchainCreateInfoKHR swapchain_info{
             .sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
             .surface          = surface,
             .minImageCount    = 3,
@@ -191,7 +216,7 @@ struct Renderer {
             .imageArrayLayers = 1,
             .imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
             .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-            .preTransform     = surfaceCapabilities.currentTransform,
+            .preTransform     = surface_capabilities.currentTransform,
             .compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
             .presentMode      = VK_PRESENT_MODE_FIFO_KHR,
             .clipped          = true,
@@ -209,13 +234,13 @@ struct Renderer {
         swapchain_image_views.clear();
         for (auto image: swapchain_images) {
             image_view_info.image = image;
-            VkImageView imageView;
-            vkCreateImageView(device, &image_view_info, nullptr, &imageView);
-            swapchain_image_views.push_back(imageView);
+            VkImageView image_view;
+            vkCreateImageView(device, &image_view_info, nullptr, &image_view);
+            swapchain_image_views.push_back(image_view);
         }
     }
 
-    std::vector<char> read_file(std::string_view path) {
+    static std::vector<char> read_file(std::string_view path) {
         std::ifstream file(path.data(), std::ios::ate | std::ios::binary);
 
         if (!file.is_open()) {
@@ -233,13 +258,13 @@ struct Renderer {
     void create_graphics_pipeline() {
         auto shader_code = read_file("shaders/slang.spv");
 
-        VkShaderModuleCreateInfo shader_module_info {
+        const VkShaderModuleCreateInfo shader_module_info {
             .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
             .codeSize = shader_code.size(),
             .pCode = reinterpret_cast<const std::uint32_t*>(shader_code.data()),
         };
 
-        VkDescriptorSetAndBindingMappingEXT root_mapping {
+        const VkDescriptorSetAndBindingMappingEXT root_mapping {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_AND_BINDING_MAPPING_EXT,
             .bindingCount = 1,
             .resourceMask = VK_SPIRV_RESOURCE_TYPE_UNIFORM_BUFFER_BIT_EXT | VK_SPIRV_RESOURCE_TYPE_READ_ONLY_STORAGE_BUFFER_BIT_EXT,
@@ -271,66 +296,72 @@ struct Renderer {
             VK_DYNAMIC_STATE_SCISSOR,
             VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY
         });
-        VkPipelineDynamicStateCreateInfo dynamic_state_info {
+        const VkPipelineDynamicStateCreateInfo dynamic_state_info {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
             .dynamicStateCount = dynamic_state.size(),
             .pDynamicStates = dynamic_state.data()
         };
 
-        VkPipelineVertexInputStateCreateInfo vertex_input_info {
+        const VkPipelineVertexInputStateCreateInfo vertex_input_info {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         };
 
-        VkPipelineInputAssemblyStateCreateInfo input_assembly_info {
+        const VkPipelineInputAssemblyStateCreateInfo input_assembly_info {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO
         };
 
-        VkPipelineViewportStateCreateInfo viewport_info {
+        const VkPipelineViewportStateCreateInfo viewport_info {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
             .viewportCount = 1,
             .scissorCount = 1
         };
 
-        VkPipelineRasterizationStateCreateInfo raster_info {
+        const VkPipelineRasterizationStateCreateInfo raster_info {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
             .polygonMode = VK_POLYGON_MODE_FILL,
-            .cullMode = VK_CULL_MODE_BACK_BIT,
+            .cullMode = VK_CULL_MODE_NONE,
             .frontFace = VK_FRONT_FACE_CLOCKWISE,
             .lineWidth = 1.0f,
         };
 
-        VkPipelineMultisampleStateCreateInfo multi_sample_info {
+        const VkPipelineMultisampleStateCreateInfo multi_sample_info {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
             .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
         };
 
-        VkPipelineColorBlendAttachmentState attach_state {
-            .blendEnable = VK_FALSE,
+        const VkPipelineColorBlendAttachmentState attach_state {
+            .blendEnable = VK_TRUE,
+            .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+            .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+            .colorBlendOp = VK_BLEND_OP_ADD,
+            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+            .alphaBlendOp = VK_BLEND_OP_ADD,
             .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+                VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
         };
 
-        VkPipelineColorBlendStateCreateInfo blend_info {
+        const VkPipelineColorBlendStateCreateInfo blend_info {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
             .logicOp = VK_LOGIC_OP_CLEAR,
             .attachmentCount = 1,
             .pAttachments = &attach_state
         };
 
-        VkPipelineRenderingCreateInfo rendering_info {
+        const VkPipelineRenderingCreateInfo rendering_info {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
             .colorAttachmentCount = 1,
             .pColorAttachmentFormats = &swapchain_format,
             //.depthAttachmentFormat = depthFormat
         };
 
-        VkPipelineCreateFlags2CreateInfo flags_info {
+        const VkPipelineCreateFlags2CreateInfo flags_info {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO,
             .pNext = &rendering_info,
             .flags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT,
         };
 
-        VkGraphicsPipelineCreateInfo pipeline_info {
+        const VkGraphicsPipelineCreateInfo pipeline_info {
             .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
             .pNext = &flags_info,
             .stageCount = shader_stages.size(),
@@ -351,7 +382,7 @@ struct Renderer {
     }
 
     void create_command_buffers() {
-        VkCommandPoolCreateInfo pool_info {
+        const VkCommandPoolCreateInfo pool_info {
             .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
             .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
             .queueFamilyIndex = queue_family_index,
@@ -359,7 +390,7 @@ struct Renderer {
         vkCreateCommandPool(device, &pool_info, nullptr, &command_pool);
 
         command_buffers.resize(2);
-        VkCommandBufferAllocateInfo command_buffer_info{
+        const VkCommandBufferAllocateInfo command_buffer_info{
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
             .commandPool = command_pool,
             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
@@ -369,7 +400,7 @@ struct Renderer {
     }
 
     void push_data(VkCommandBuffer command_buffer, std::uint32_t offset, std::size_t size, VkDeviceAddress data) {
-        VkPushDataInfoEXT push_data {
+        const VkPushDataInfoEXT push_data {
             .sType = VK_STRUCTURE_TYPE_PUSH_DATA_INFO_EXT,
             .offset = offset,
             .data = {.address = &data, .size = size}
@@ -397,7 +428,7 @@ struct Renderer {
         auto command_buffer = command_buffers[frame_index];
         vkResetCommandBuffer(command_buffer, 0);
 
-        VkCommandBufferBeginInfo begin_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+        const VkCommandBufferBeginInfo begin_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
         vkBeginCommandBuffer(command_buffer, &begin_buffer_info);
 
         VkImageMemoryBarrier2 barrier {
@@ -416,25 +447,25 @@ struct Renderer {
                 .layerCount     = 1
             }
         };
-        VkDependencyInfo dependency_info {
+        const VkDependencyInfo dependency_info {
             .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
             .imageMemoryBarrierCount = 1,
             .pImageMemoryBarriers = &barrier
         };
         vkCmdPipelineBarrier2(command_buffers[frame_index], &dependency_info);
 
-        VkRenderingAttachmentInfo attachment_info{
+        const VkRenderingAttachmentInfo attachment_info{
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
             .imageView   = swapchain_image_views[image_index],
             .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             .loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp     = VK_ATTACHMENT_STORE_OP_STORE,
-            .clearValue  = {0.0f, 0.0f, 0.0f, 0.0f},
+            .clearValue  = {{0.0f, 0.0f, 0.0f, 0.0f}},
         };
-        VkRenderingInfo rendering_info{
+        const VkRenderingInfo rendering_info{
             .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
             .renderArea = {
-                .offset = {0, 0},
+                .offset = {.x = 0, .y = 0},
                 .extent = swapchain_extent,
             },
             .layerCount           = 1,
@@ -446,10 +477,10 @@ struct Renderer {
         auto extent_size = std::min(swapchain_extent.width, swapchain_extent.height);
         auto x = (swapchain_extent.width-extent_size)/2.0f;
         auto y = (swapchain_extent.height-extent_size)/2.0f;
-        VkViewport viewport{ x, y, extent_size, extent_size, 0.0f, 1.0f };
+        const VkViewport viewport{ x, y, extent_size, extent_size, 0.0f, 1.0f };
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 
-        VkRect2D scissor{ {0,0}, swapchain_extent };
+        const VkRect2D scissor{ {0,0}, swapchain_extent };
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
         return { command_buffer, image_index };
@@ -458,7 +489,7 @@ struct Renderer {
     void end_rendering(VkCommandBuffer command_buffer, std::uint32_t image_index) {
         vkCmdEndRendering(command_buffer);
 
-        VkImageMemoryBarrier2 barrier {
+        const VkImageMemoryBarrier2 barrier {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
             .srcStageMask        = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
             .srcAccessMask       = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
@@ -474,7 +505,7 @@ struct Renderer {
                 .layerCount     = 1
             }
         };
-        VkDependencyInfo dependency_info {
+        const VkDependencyInfo dependency_info {
             .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
             .imageMemoryBarrierCount = 1,
             .pImageMemoryBarriers = &barrier
@@ -483,8 +514,8 @@ struct Renderer {
 
         vkEndCommandBuffer(command_buffer);
 
-        VkPipelineStageFlags wait_dst_stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        VkSubmitInfo submitInfo{
+        const  VkPipelineStageFlags wait_dst_stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        const VkSubmitInfo submit_info{
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .waitSemaphoreCount   = 1,
             .pWaitSemaphores      = present_complete_semaphores.data()+frame_index,
@@ -494,9 +525,9 @@ struct Renderer {
             .signalSemaphoreCount = 1,
             .pSignalSemaphores    = render_finished_semaphores.data()+image_index
         };
-        vkQueueSubmit(graphics_queue, 1, &submitInfo, in_flight_fences[frame_index]);
+        vkQueueSubmit(graphics_queue, 1, &submit_info, in_flight_fences[frame_index]);
 
-        VkPresentInfoKHR present_info{
+        const VkPresentInfoKHR present_info{
             .sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
             .pWaitSemaphores    = render_finished_semaphores.data()+image_index,
@@ -510,17 +541,17 @@ struct Renderer {
     }
 
     void create_sync_objects() {
-        VkSemaphoreCreateInfo semaphore_info { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-        VkFenceCreateInfo fence_info {
+        const VkSemaphoreCreateInfo semaphore_info { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+        const VkFenceCreateInfo fence_info {
             .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
             .flags = VK_FENCE_CREATE_SIGNALED_BIT
         };
-        for (int i=0; i<swapchain_images.size(); ++i) {
+        for (std::size_t i=0; i<swapchain_images.size(); ++i) {
             VkSemaphore semaphore;
             vkCreateSemaphore(device, &semaphore_info, nullptr, &semaphore);
             render_finished_semaphores.push_back(semaphore);
         }
-        for (int i=0; i<command_buffers.size(); ++i) {
+        for (std::size_t i=0; i<command_buffers.size(); ++i) {
             VkSemaphore semaphore;
             vkCreateSemaphore(device, &semaphore_info, nullptr, &semaphore);
             present_complete_semaphores.push_back(semaphore);
@@ -531,7 +562,7 @@ struct Renderer {
     }
 
     uint32_t find_gpu_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties) {
-        auto memory_properties = vkGetThing(vkGetPhysicalDeviceMemoryProperties, physical_device);
+        const auto memory_properties = vkGetThing(vkGetPhysicalDeviceMemoryProperties, physical_device);
         for (uint32_t i = 0; i < memory_properties.memoryTypeCount; i++) {
             if ((type_filter & (1 << i)) && (memory_properties.memoryTypes[i].propertyFlags & properties) == properties) {
                 return i;
@@ -540,37 +571,27 @@ struct Renderer {
         throw std::runtime_error("failed to find suitable memory type!");
     }
 
-    GpuMemory allocate_gpu_memory(std::size_t size) {
-        constexpr VkBufferUsageFlags universal_buffer_usage =
-            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
-        constexpr VkMemoryPropertyFlags cpu_visible_memory_properties =
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
+    GpuMemory allocate_gpu_memory(std::size_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_properties) {
         GpuMemory result{};
 
-        VkBufferCreateInfo buffer_info {
+        const VkBufferCreateInfo buffer_info{
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             .size = size,
-            .usage = universal_buffer_usage,
+            .usage = usage,
             .sharingMode = VK_SHARING_MODE_EXCLUSIVE
         };
         vkCreateBuffer(device, &buffer_info, nullptr, &result.buffer);
 
-        auto buffer_requirements = vkGetThing(vkGetBufferMemoryRequirements, device, result.buffer);
+        const auto buffer_requirements = vkGetThing(vkGetBufferMemoryRequirements, device, result.buffer);
         const VkMemoryAllocateFlagsInfo alloc_flags_info{
             .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
             .flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT,
         };
-        VkMemoryAllocateInfo alloc_info{
+        const VkMemoryAllocateInfo alloc_info{
             .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
             .pNext = &alloc_flags_info,
             .allocationSize = buffer_requirements.size,
-            .memoryTypeIndex = find_gpu_memory_type(buffer_requirements.memoryTypeBits, cpu_visible_memory_properties),
+            .memoryTypeIndex = find_gpu_memory_type(buffer_requirements.memoryTypeBits, memory_properties),
         };
         vkAllocateMemory(device, &alloc_info, nullptr, &result.memory);
         vkBindBufferMemory(device, result.buffer, result.memory, 0);
@@ -584,6 +605,212 @@ struct Renderer {
         return result;
     }
 
+    static constexpr VkBufferUsageFlags universal_buffer_usage =
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+    static constexpr VkMemoryPropertyFlags cpu_visible_memory_properties =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+    GpuMemory allocate_gpu_memory(std::size_t size) {
+        return allocate_gpu_memory(size, universal_buffer_usage, cpu_visible_memory_properties);
+    }
+
+    GpuMemory allocate_descriptor_heap(std::size_t size) {
+        return allocate_gpu_memory(size, universal_buffer_usage | VK_BUFFER_USAGE_DESCRIPTOR_HEAP_BIT_EXT, cpu_visible_memory_properties);
+    }
+
+    void load_textures() {
+        auto command_buffer = command_buffers[frame_index];
+        vkResetCommandBuffer(command_buffer, 0);
+
+        const VkCommandBufferBeginInfo begin_buffer_info{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+        vkBeginCommandBuffer(command_buffer, &begin_buffer_info);
+
+        const VkImageCreateInfo image_info = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = VK_FORMAT_R8_UNORM,
+            .extent = {
+                .width = 200,
+                .height = 81,
+                .depth = 1,
+            },
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = 1,
+            .pQueueFamilyIndices = &queue_family_index,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        };
+        vkCreateImage(device, &image_info, nullptr, &font_image);
+
+        const VkDeviceImageMemoryRequirements requirements_info{
+            .sType = VK_STRUCTURE_TYPE_DEVICE_IMAGE_MEMORY_REQUIREMENTS,
+            .pCreateInfo = &image_info,
+        };
+        VkMemoryRequirements2 requirements{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
+        };
+        vkGetDeviceImageMemoryRequirements(device, &requirements_info, &requirements);
+        auto texture_memory_type = find_gpu_memory_type(requirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // avoid VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+
+        const VkMemoryAllocateInfo allocate_info{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = 32*1024*1024,
+            .memoryTypeIndex = texture_memory_type,
+        };
+        vkAllocateMemory(device, &allocate_info, nullptr, &font_image_memory);
+
+        vkBindImageMemory(device, font_image, font_image_memory, 0);
+
+        const VkImageMemoryBarrier2 barrier{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
+            .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = font_image,
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .levelCount = 1,
+                .layerCount = 1,
+            },
+        };
+        const VkDependencyInfo dependency_info{
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &barrier
+        };
+        vkCmdPipelineBarrier2(command_buffer, &dependency_info);
+
+        std::ifstream file("font.r8", std::ios::binary);
+        if (!file.is_open()) {
+            throw std::runtime_error("failed to open file!");
+        }
+        file.read(reinterpret_cast<char*>(working_memory.cpu), 1024*1024);
+        file.close();
+
+        const VkDeviceMemoryImageCopyKHR region {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_MEMORY_IMAGE_COPY_KHR,
+            .addressRange = {
+                .address = working_memory.gpu,
+                .size = 200*81,
+            },
+            .addressFlags = VK_ADDRESS_COMMAND_FULLY_BOUND_BIT_KHR,
+            .addressRowLength = 0,
+            .addressImageHeight = 0,
+            .imageSubresource = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .imageOffset = {
+                .x = 0,
+                .y = 0,
+                .z = 0,
+            },
+            .imageExtent = {
+                .width = 200,
+                .height = 81,
+                .depth = 1,
+            },
+        };
+        const VkCopyDeviceMemoryImageInfoKHR info {
+            .sType = VK_STRUCTURE_TYPE_COPY_DEVICE_MEMORY_IMAGE_INFO_KHR,
+            .image = font_image,
+            .regionCount = 1,
+            .pRegions = &region,
+        };
+        vkCmdCopyMemoryToImageKHR(command_buffer, &info);
+
+        vkEndCommandBuffer(command_buffer);
+
+        const VkSubmitInfo submitInfo{
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .commandBufferCount   = 1,
+            .pCommandBuffers      = &command_buffer,
+        };
+        vkResetFences(device, 1, in_flight_fences.data());
+        vkQueueSubmit(graphics_queue, 1, &submitInfo, in_flight_fences[frame_index]);
+        vkWaitForFences(device, 1, in_flight_fences.data(), VK_TRUE, UINT64_MAX);
+
+        VkPhysicalDeviceProperties2 properties2{
+           .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+           .pNext = &heap_properties,
+        };
+        vkGetPhysicalDeviceProperties2(physical_device, &properties2);
+
+        descriptor_heap = allocate_descriptor_heap(heap_properties.imageDescriptorSize+heap_properties.samplerDescriptorSize+heap_properties.minResourceHeapReservedRange+heap_properties.minSamplerHeapReservedRange);
+
+        const VkImageUsageFlags descriptor_usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+        const VkImageAspectFlags descriptor_aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+        const VkImageViewUsageCreateInfo view_usage{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO,
+            .usage = descriptor_usage,
+        };
+        const VkImageViewCreateInfo view_info{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .pNext = &view_usage,
+            .image = font_image,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = VK_FORMAT_R8_UNORM,
+            .subresourceRange = {
+                .aspectMask = descriptor_aspect,
+                .baseMipLevel =0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+        const VkImageDescriptorInfoEXT image_descriptor{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_DESCRIPTOR_INFO_EXT,
+            .pView = &view_info,
+            .layout = VK_IMAGE_LAYOUT_GENERAL,
+        };
+        const VkResourceDescriptorInfoEXT descriptor_info{
+            .sType = VK_STRUCTURE_TYPE_RESOURCE_DESCRIPTOR_INFO_EXT,
+            .type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+            .data = {.pImage = &image_descriptor},
+        };
+        const VkHostAddressRangeEXT tex_destination{
+            .address = descriptor_heap.cpu,
+            .size = heap_properties.imageDescriptorSize,
+        };
+        vkWriteResourceDescriptorsEXT(device, 1, &descriptor_info, &tex_destination);
+
+        const VkSamplerCreateInfo sampler_info{
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter = VK_FILTER_NEAREST,
+            .minFilter = VK_FILTER_NEAREST,
+            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+            .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .anisotropyEnable = VK_FALSE,
+            .maxAnisotropy = 1.0f,
+            .compareEnable = VK_FALSE,
+            .compareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+            .maxLod = VK_LOD_CLAMP_NONE,
+        };
+        const VkHostAddressRangeEXT samp_destination{
+            .address = descriptor_heap.cpu + heap_properties.imageDescriptorSize,
+            .size = heap_properties.samplerDescriptorSize,
+        };
+        vkWriteSamplerDescriptorsEXT(device, 1, &sampler_info, &samp_destination);
+    }
+
     Renderer(RGFW_window* window_) {
         window = window_;
         create_instance();
@@ -594,6 +821,7 @@ struct Renderer {
         create_command_buffers();
         create_sync_objects();
         working_memory = allocate_gpu_memory(32*1024*1024);
+        load_textures();
     }
 
     void destroy_swapchain() {
@@ -605,6 +833,12 @@ struct Renderer {
 
     ~Renderer() {
         vkDeviceWaitIdle(device);
+
+        vkFreeMemory(device, font_image_memory, nullptr);
+        vkDestroyImage(device, font_image, nullptr);
+
+        vkFreeMemory(device, descriptor_heap.memory, nullptr);
+        vkDestroyBuffer(device, descriptor_heap.buffer, nullptr);
 
         vkFreeMemory(device, working_memory.memory, nullptr);
         vkDestroyBuffer(device, working_memory.buffer, nullptr);
@@ -634,7 +868,7 @@ struct Renderer {
 
         auto [command_buffer, image_index] = begin_rendering();
 
-        std::byte* frame_working_mem = working_memory.cpu + frame_index*16*1024*1024 + 128;
+        std::byte* frame_working_mem = working_memory.cpu + frame_index*16*1024*1024 + 256;
         for (std::size_t i=0; i<simulation.positions.size(); ++i) {
             reinterpret_cast<glm::vec2*>(frame_working_mem)[i] = simulation.positions[i];
         }
@@ -643,7 +877,7 @@ struct Renderer {
             reinterpret_cast<float*>(frame_working_mem)[i] = simulation.masses[i];
         }
         frame_working_mem += simulation.masses.size()*sizeof(float);
-        std::size_t n_lines = 0;
+        std::uint32_t n_lines = 0;
         if (display_quadtree) {
             std::vector<glm::vec2> lineVertices = quadtree_lines(simulation.quadtree, 7+std::log2(zoom));
             for (std::size_t i=0; i<lineVertices.size(); ++i) {
@@ -653,7 +887,7 @@ struct Renderer {
             frame_working_mem += lineVertices.size()*sizeof(glm::vec2);
         }
 
-        size_t n_points = simulation.positions.size();
+        std::uint32_t n_points = simulation.positions.size();
         std::byte* cpu_shader_data = working_memory.cpu + frame_index*16*1024*1024;
         VkDeviceAddress gpu_shader_data = working_memory.gpu + frame_index*16*1024*1024;
         struct ShaderData {
@@ -665,11 +899,34 @@ struct Renderer {
             int mode;
         };
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+        const VkBindHeapInfoEXT bind_info_img{
+            .sType = VK_STRUCTURE_TYPE_BIND_HEAP_INFO_EXT,
+            .heapRange = {
+                .address = descriptor_heap.gpu,
+                .size = heap_properties.imageDescriptorSize+heap_properties.minResourceHeapReservedRange,
+            },
+            .reservedRangeOffset = heap_properties.imageDescriptorSize,
+            .reservedRangeSize = heap_properties.minResourceHeapReservedRange,
+        };
+        vkCmdBindResourceHeapEXT(command_buffer, &bind_info_img);
+
+        const VkBindHeapInfoEXT bind_info_samp{
+            .sType = VK_STRUCTURE_TYPE_BIND_HEAP_INFO_EXT,
+            .heapRange = {
+                .address = descriptor_heap.gpu+heap_properties.imageDescriptorSize+heap_properties.minResourceHeapReservedRange,
+                .size = heap_properties.samplerDescriptorSize + heap_properties.minSamplerHeapReservedRange,
+            },
+            .reservedRangeOffset = heap_properties.samplerDescriptorSize,
+            .reservedRangeSize = heap_properties.minSamplerHeapReservedRange,
+        };
+        vkCmdBindSamplerHeapEXT(command_buffer, &bind_info_samp);
+
         ShaderData* shader_data = reinterpret_cast<ShaderData*>(cpu_shader_data);
         if (n_lines) {
             vkCmdSetPrimitiveTopology(command_buffer, VK_PRIMITIVE_TOPOLOGY_LINE_LIST);
-            shader_data[1].pos = gpu_shader_data+128+n_points*sizeof(glm::vec2)+n_points*sizeof(float);
-            shader_data[1].color = { 0.0, 0.0, 0.6 };
+            shader_data[1].pos = gpu_shader_data+256+n_points*sizeof(glm::vec2)+n_points*sizeof(float);
+            shader_data[1].color = { 0.0f, 0.0f, 0.6f };
             shader_data[1].zoom = zoom;
             shader_data[1].center = center;
             shader_data[1].mode = 1;
@@ -677,14 +934,46 @@ struct Renderer {
             vkCmdDraw(command_buffer, n_lines, 1, 0, 0);
         }
         vkCmdSetPrimitiveTopology(command_buffer, VK_PRIMITIVE_TOPOLOGY_POINT_LIST);
-        shader_data[0].pos = gpu_shader_data+128;
-        shader_data[0].mass = gpu_shader_data+128+n_points*sizeof(glm::vec2);
-        shader_data[0].color = { 1.0, 1.0, 1.0 };
+        shader_data[0].pos = gpu_shader_data+256;
+        shader_data[0].mass = gpu_shader_data+256+n_points*sizeof(glm::vec2);
+        shader_data[0].color = { 1.0f, 1.0f, 1.0f };
         shader_data[0].zoom = zoom;
         shader_data[0].center = center;
         shader_data[0].mode = 0;
         push_data(command_buffer, 0, sizeof(ShaderData), gpu_shader_data);
         vkCmdDraw(command_buffer, n_points, 1, 0, 0);
+
+        if (not text.empty()) {
+#include "font.inl"
+            auto points = reinterpret_cast<std::pair<glm::vec2, glm::vec2>*>(frame_working_mem);
+            std::uint32_t n_text_points = 0;
+            for (auto& [pos, str]: text) {
+                std::uint32_t text_x = pos.x;
+                for (auto& c: str) {
+                    auto& font_char = *std::find_if(font_characters, font_characters+font.characterCount, [&](Character& fc) { return fc.codePoint == c; });
+                    points[0].first.x  = points[4].first.x  = points[5].first.x = 2.0f*(text_x - font_char.originX)/window->w - 1.0f;
+                    points[0].second.x = points[4].second.x = points[5].second.x = static_cast<float>(font_char.x)/font.width;
+                    points[0].first.y  = points[1].first.y  = points[5].first.y = 2.0f*(pos.y - font_char.originY)/window->h - 1.0f;
+                    points[0].second.y = points[1].second.y = points[5].second.y = static_cast<float>(font_char.y)/font.height;
+                    points[1].first.x  = points[2].first.x  = points[3].first.x = 2.0f*(text_x + font_char.width - font_char.originX)/window->w - 1.0f;
+                    points[1].second.x = points[2].second.x = points[3].second.x = static_cast<float>(font_char.x + font_char.width)/font.width;
+                    points[2].first.y  = points[3].first.y  = points[4].first.y = 2.0f*(pos.y + font_char.height - font_char.originY)/window->h - 1.0f;
+                    points[2].second.y = points[3].second.y = points[4].second.y = static_cast<float>(font_char.y + font_char.height)/font.height;
+                    points += 6;
+                    n_text_points += 6;
+                    text_x += font_char.width;
+                }
+            }
+
+            vkCmdSetPrimitiveTopology(command_buffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+            shader_data[2].pos = gpu_shader_data+256+n_points*sizeof(glm::vec2)+n_points*sizeof(float)+n_lines*sizeof(glm::vec2);
+            shader_data[2].color = { 0.0f, 0.6f, 0.0f };
+            shader_data[2].zoom = zoom;
+            shader_data[2].center = center;
+            shader_data[2].mode = 2;
+            push_data(command_buffer, 0, sizeof(ShaderData), gpu_shader_data+2*sizeof(ShaderData));
+            vkCmdDraw(command_buffer, n_text_points, 1, 0, 0);
+        }
         
         end_rendering(command_buffer, image_index);
     }

@@ -238,6 +238,7 @@ int main(void) {
     Renderer renderer(window);
     renderer.zoom = 2.0;
     renderer.center = {0.5, 0.5};
+    renderer.add_text({20, 30}, "F1 Help");
 
     while (RGFW_window_shouldClose(window) == RGFW_FALSE) {
         RGFW_event event;

@@ -34,7 +34,7 @@ if(WIN32)
 			)
 			add_custom_command (
 					OUTPUT  ${SHADERS_DIR}/slang.spv
-					COMMAND ${SLANGC_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -o slang.spv
+					COMMAND ${SLANGC_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_SOURCES} -target spirv -profile spirv_1_5 -emit-spirv-directly -fvk-use-entrypoint-name -fvk-use-c-layout -capability spvDescriptorHeapEXT -o slang.spv
 					WORKING_DIRECTORY ${SHADERS_DIR}
 					DEPENDS ${SHADERS_DIR} ${SHADER_SOURCES}
 					COMMENT "Compiling Slang Shaders"
