@@ -1,4 +1,5 @@
 ﻿#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <random>
 #include <ranges>
@@ -219,10 +220,6 @@ int main(void) {
     make_two_stars(simulation.positions, simulation.velocities, simulation.masses, 0.15);
     simulation.init();
 
-    auto mouse_pos = glm::vec2{};
-    bool step_once = false;
-    int steps = 0;
-
 #ifdef FMM_RENDERER_VULKAN
     RGFW_init("fmm", RGFW_initVulkan);
 #else
@@ -238,11 +235,19 @@ int main(void) {
     Renderer renderer(window);
     renderer.zoom = 2.0;
     renderer.center = {0.5, 0.5};
-    renderer.add_text({20, 30}, "F1 Help");
 
+    auto mouse_pos = glm::vec2{};
+    int steps = 0;
+    int showing_info = 0;
+    float frame_time = 0;
+    float render_time = 0;
+    std::vector<Renderer::Text> text = {{{20, 30}, "F1 - Help"}};
     while (RGFW_window_shouldClose(window) == RGFW_FALSE) {
+        bool step_once = false;
         RGFW_event event;
+        auto frame_start = std::chrono::high_resolution_clock::now();
         while (RGFW_window_checkEvent(window, &event)) {
+
             if (event.type == RGFW_keyPressed and event.key.value == RGFW_keySpace and not event.key.repeat) {
                 steps = steps>0 ? 0 : 1;
             }
@@ -273,6 +278,28 @@ int main(void) {
                 make_disk(simulation.positions, simulation.velocities, simulation.masses, 0.3);
                 simulation.init();
             }
+            if (event.type == RGFW_keyPressed and event.key.value == RGFW_keyF1 and not event.key.repeat) {
+                text.clear();
+                if (showing_info != 1) {
+                    showing_info = 1;
+                    std::uint32_t y = 10;
+                    text.emplace_back(glm::uvec2{20u, y+=20 }, "1,2,3 - reset sim");
+                    text.emplace_back(glm::uvec2{ 20, y+=20 }, "space - stop/start");
+                    text.emplace_back(glm::uvec2{ 20, y+=20 }, "s - run one step");
+                    text.emplace_back(glm::uvec2{ 20, y+=20 }, "left/right - dec/inc speed");
+                    text.emplace_back(glm::uvec2{ 20, y+=20 }, "mouse wheel - zoom");
+                    text.emplace_back(glm::uvec2{ 20, y+=20 }, "mouse drag - pan");
+                    text.emplace_back(glm::uvec2{ 20, y+=20 }, "q - toggle quadtree");
+                    text.emplace_back(glm::uvec2{ 20, y+=20 }, "p - toggle stats");
+                    text.emplace_back(glm::uvec2{ 20, y+=20 }, "esc - exit");
+                } else {
+                    showing_info = 0;
+                }
+            }
+            if (event.type == RGFW_keyPressed and event.key.value == RGFW_keyP and not event.key.repeat) {
+                text.clear();
+                showing_info = showing_info == 2 ? 0 : 2;
+            }
             if (event.type == RGFW_mouseScroll) {
                 if (event.delta.y < 0) {
                     renderer.zoom /= 1.25;
@@ -292,12 +319,30 @@ int main(void) {
             }
         }
 
+        float sim_time = 0;
         for (int i=0; i<steps or step_once; ++i) {
             step_once = false;
+            auto sim_start = std::chrono::high_resolution_clock::now();
             simulation.update(0.0001);
+            sim_time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - sim_start).count()/1000.0f;
         }
 
-        renderer.render(simulation);
+        if (showing_info == 2) {
+            text.clear();
+            std::uint32_t y = 10;
+            text.emplace_back(glm::uvec2{ 20, y+=20 }, std::format("frame {:4.1f}ms", frame_time));
+            text.emplace_back(glm::uvec2{ 20, y+=20 }, std::format("sim {:4.1f}ms", sim_time));
+            text.emplace_back(glm::uvec2{ 20, y+=20 }, "qtree ??.?ms");
+            text.emplace_back(glm::uvec2{ 20, y+=20 }, "mpoles ??.?ms");
+            text.emplace_back(glm::uvec2{ 20, y+=20 }, "fields ??.?ms");
+            text.emplace_back(glm::uvec2{ 20, y+=20 }, "forces ??.?ms");
+            text.emplace_back(glm::uvec2{ 20, y+=20 }, std::format("render {:4.1f}ms", render_time));
+        }
+
+        auto render_start = std::chrono::high_resolution_clock::now();
+        renderer.render(simulation, text);
+        render_time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - render_start).count()/1000.0f;
+        frame_time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - frame_start).count()/1000.0f;
     }
 
     RGFW_window_close(window);

@@ -66,7 +66,8 @@ struct Renderer {
         colorUniformLocation = glGetUniformLocation(shaderProgram, "inColor");
     }
 
-    void render(const Simulation& simulation) {
+    using Text = std::pair<glm::uvec2, std::string>;
+    void render(const Simulation& simulation, std::span<Text> text) {
         points.resize(simulation.positions.size()*2);
         for (std::size_t i=0; i<simulation.positions.size(); ++i) {
             points[2*i] = simulation.positions[i].x;
@@ -96,7 +97,4 @@ struct Renderer {
 
 		RGFW_window_swapBuffers_OpenGL(window);
     }
-
-    void add_text(glm::uvec2 pos, std::string str) {
-	}
 };

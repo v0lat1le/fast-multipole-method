@@ -76,11 +76,7 @@ struct Renderer {
     GpuMemory descriptor_heap;
 
     // text
-    std::vector<std::pair<glm::uvec2, std::string>> text;
-
-    void add_text(glm::uvec2 pos, std::string str) {
-        text.emplace_back(pos, str);
-    }
+    using Text = std::pair<glm::uvec2, std::string>;
 
     void create_instance() {
         const VkApplicationInfo app_info{
@@ -861,7 +857,7 @@ struct Renderer {
         vkDestroyInstance(instance, nullptr);
     }
 
-    void render(const Simulation& simulation) {
+    void render(const Simulation& simulation, std::span<Text> text) {
         if (window->w == 0 || window->h == 0) {
             return;
         }
@@ -967,7 +963,7 @@ struct Renderer {
 
             vkCmdSetPrimitiveTopology(command_buffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
             shader_data[2].pos = gpu_shader_data+256+n_points*sizeof(glm::vec2)+n_points*sizeof(float)+n_lines*sizeof(glm::vec2);
-            shader_data[2].color = { 0.0f, 0.6f, 0.0f };
+            shader_data[2].color = { 0.0f, 0.5f, 0.0f };
             shader_data[2].zoom = zoom;
             shader_data[2].center = center;
             shader_data[2].mode = 2;
